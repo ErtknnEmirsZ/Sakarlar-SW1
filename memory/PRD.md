@@ -1,20 +1,22 @@
 # Şakarlar SW - PRD
 
 ## Problem Statement
-Internal warehouse mobile application for quickly checking product prices. No login, no cart, just fast price lookup.
+Internal warehouse mobile application for quickly checking product prices. No login, no cart, just fast price lookup. Only cleaning (temizlik) and packaging (ambalaj) products.
 
 ## Architecture
 - **Frontend**: Expo React Native (SDK 54) - expo-router file-based navigation
 - **Backend**: FastAPI + Motor (async MongoDB) - Python
 - **Database**: MongoDB
-- **Search**: rapidfuzz in-memory fuzzy search with Turkish normalization
+- **Search**: rapidfuzz in-memory fuzzy search with Turkish char normalization
 
 ## Core Requirements (Static)
 - Search products with live fuzzy search supporting Turkish characters (ç,ğ,ı,ö,ş,ü)
 - Barcode scanning via camera
-- Speed Mode: auto-continue scanning after each successful scan
+- Speed Mode: full-screen white price display, auto-continue after 1 second
+- Category filter: Tümü / Temizlik / Ambalaj
 - Admin panel: add/edit/delete products manually + CSV/Excel bulk import
 - No login system required
+- Only cleaning and packaging products (no food)
 - Must work smoothly with 1000+ products
 - Currency: Turkish Lira (₺)
 
@@ -22,29 +24,44 @@ Internal warehouse mobile application for quickly checking product prices. No lo
 - **Depo Personeli (Warehouse Staff)**: Primary user, looks up prices quickly
 - **Yönetici (Manager)**: Manages product catalog via admin panel
 
-## What's Been Implemented (April 2026)
+## What's Been Implemented
+
+### v1 (April 2026) - Initial MVP
+- Basic product CRUD, fuzzy search, barcode scanner, admin panel, 30 seed products
+
+### v2 (April 2026) - Major Update
+- Removed all food products
+- Added `category` field (temizlik/ambalaj) to all products
+- Added category filter buttons (Tümü/Temizlik/Ambalaj) on main screen
+- 45 seed products: 25 temizlik + 20 ambalaj
+- Speed Mode: full-screen WHITE overlay with giant dark price (1 second, auto-return)
+- Barcode not found: auto-return after 1 second
+- Animated price reveal (opacity fade-in on result)
+- Admin stats shows total + temizlik + ambalaj counts
+- Add/edit product form includes category picker
+- Improved fuzzy search (added WRatio scoring)
+
 ### Backend (server.py)
-- `GET /api/products?q=` - list all or fuzzy search
+- `GET /api/products?q=&category=` - list/search with category filter
 - `GET /api/products/barcode/{barcode}` - barcode lookup
 - `GET /api/products/{id}` - single product
-- `POST /api/products` - create product
-- `PUT /api/products/{id}` - update product
-- `DELETE /api/products/{id}` - delete product
-- `POST /api/products/import` - bulk CSV/Excel import
-- `GET /api/stats` - total product count
-- Turkish character normalization (ç→c, ğ→g, etc.)
+- `POST /api/products` - create with category
+- `PUT /api/products/{id}` - update with category
+- `DELETE /api/products/{id}` - delete
+- `POST /api/products/import` - bulk CSV/Excel import (auto-detects category column)
+- `GET /api/stats` - total + temizlik + ambalaj counts
 - In-memory product cache for instant search
-- 30 seed products on first startup
+- Auto re-seeds if products lack category field
 
 ### Frontend Screens
-- **index.tsx**: Main search screen with bottom search bar, speed mode toggle, product list
-- **scanner.tsx**: Full-screen camera barcode scanner with overlay, speed mode auto-continue
-- **product/[id].tsx**: Product detail with large price display
-- **admin/index.tsx**: Admin panel with product list, CSV/Excel import, stats
-- **admin/add.tsx**: Add/Edit product form with barcode scan
+- **index.tsx**: Main search screen, category filter buttons, bottom search+scan bar
+- **scanner.tsx**: Full-screen camera, speed mode (white full-screen price overlay), normal mode (bottom sheet)
+- **product/[id].tsx**: Product detail with large 64px price, category badge, barcode
+- **admin/index.tsx**: Admin panel with category breakdown stats, CSV/Excel import
+- **admin/add.tsx**: Add/Edit product form with Temizlik/Ambalaj category picker
 
 ### Libraries
-- rapidfuzz: fuzzy search
+- rapidfuzz: fuzzy search (Turkish normalized)
 - expo-camera@17.0.10: barcode scanning
 - expo-document-picker@14.0.8: file import
 - lucide-react-native + react-native-svg: icons
@@ -54,22 +71,21 @@ Internal warehouse mobile application for quickly checking product prices. No lo
 
 ### P0 (Done)
 - [x] Live fuzzy search with Turkish support
-- [x] Product list view
-- [x] Product detail screen
+- [x] Category filter (Tümü/Temizlik/Ambalaj)
+- [x] Speed Mode full-screen price display
 - [x] Barcode scanner with camera
-- [x] Speed Mode
-- [x] Admin panel
-- [x] CSV/Excel import
-- [x] Manual add/edit/delete
+- [x] Admin panel with category breakdown
+- [x] CSV/Excel import with category column support
+- [x] Manual add/edit/delete with category
+- [x] Only cleaning + packaging products
 
 ### P1 (Next)
 - [ ] Export products to CSV
 - [ ] Price history tracking
-- [ ] Product categories/tags
-- [ ] Bulk price update
+- [ ] Bulk price update by category
+- [ ] Stock quantity tracking
 
 ### P2 (Future)
-- [ ] Multi-warehouse support
-- [ ] Low-stock alerts
+- [ ] Print price labels from app
 - [ ] Offline mode with local cache
-- [ ] Print price labels
+- [ ] Multiple warehouse support

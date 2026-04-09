@@ -34,6 +34,8 @@ export default function AdminScreen() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [temizlikCount, setTemizlikCount] = useState(0);
+  const [ambalajCount, setAmbalajCount] = useState(0);
   const router = useRouter();
 
   const loadProducts = useCallback(async (q = '') => {
@@ -57,6 +59,8 @@ export default function AdminScreen() {
       const res = await fetch(`${BACKEND_URL}/api/stats`);
       const data = await res.json();
       setTotalCount(data.total_products);
+      setTemizlikCount(data.temizlik || 0);
+      setAmbalajCount(data.ambalaj || 0);
     } catch {}
   }, []);
 
@@ -170,9 +174,19 @@ export default function AdminScreen() {
     <SafeAreaView style={styles.container}>
       {/* Stats Bar */}
       <View style={styles.statsBar}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNum}>{totalCount}</Text>
-          <Text style={styles.statLabel}>Toplam Ürün</Text>
+        <View style={styles.statCards}>
+          <View style={styles.statCard}>
+            <Text style={styles.statNum}>{totalCount}</Text>
+            <Text style={styles.statLabel}>Toplam</Text>
+          </View>
+          <View style={[styles.statCard, styles.statCardTemizlik]}>
+            <Text style={[styles.statNum, { color: '#3B82F6' }]}>{temizlikCount}</Text>
+            <Text style={styles.statLabel}>Temizlik</Text>
+          </View>
+          <View style={[styles.statCard, styles.statCardAmbalaj]}>
+            <Text style={[styles.statNum, { color: '#8B5CF6' }]}>{ambalajCount}</Text>
+            <Text style={styles.statLabel}>Ambalaj</Text>
+          </View>
         </View>
         <TouchableOpacity
           testID="import-btn"
@@ -249,12 +263,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 16,
+    padding: 12,
     backgroundColor: C.surface,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  statCard: { gap: 2 },
+  statCards: { flexDirection: 'row', gap: 8 },
+  statCard: {
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: C.highlight,
+    minWidth: 60,
+  },
+  statCardTemizlik: { backgroundColor: 'rgba(59,130,246,0.12)' },
+  statCardAmbalaj: { backgroundColor: 'rgba(139,92,246,0.12)' },
   statNum: { color: C.primary, fontSize: 28, fontWeight: '900' },
   statLabel: { color: C.sub, fontSize: 12, fontWeight: '500' },
   importBtn: {
