@@ -2,7 +2,6 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   StyleSheet, SafeAreaView, Alert, ActivityIndicator,
-  Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
@@ -28,6 +27,20 @@ interface Product {
   price: number;
 }
 
+const formatImportDate = (iso: string) => {
+  try {
+    const d = new Date(iso);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear();
+    const hour = d.getHours().toString().padStart(2, '0');
+    const min = d.getMinutes().toString().padStart(2, '0');
+    return `${day}.${month}.${year} ${hour}:${min}`;
+  } catch {
+    return '';
+  }
+};
+
 export default function AdminScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState('');
@@ -36,6 +49,8 @@ export default function AdminScreen() {
   const [totalCount, setTotalCount] = useState(0);
   const [temizlikCount, setTemizlikCount] = useState(0);
   const [ambalajCount, setAmbalajCount] = useState(0);
+  const [gidaCount, setGidaCount] = useState(0);
+  const [lastImport, setLastImport] = useState<string | null>(null);
   const router = useRouter();
 
   const loadProducts = useCallback(async (q = '') => {
@@ -46,7 +61,7 @@ export default function AdminScreen() {
         : `${BACKEND_URL}/api/products`;
       const res = await fetch(url);
       const data = await res.json();
-      setProducts(data);
+      setProducts(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -56,11 +71,19 @@ export default function AdminScreen() {
 
   const loadStats = useCallback(async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/stats`);
-      const data = await res.json();
-      setTotalCount(data.total_products);
-      setTemizlikCount(data.temizlik || 0);
-      setAmbalajCount(data.ambalaj || 0);
+      const [statsRes, settingsRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/api/stats`),
+        fetch(`${BACKEND_URL}/api/settings`),
+      ]);
+      const stats = await statsRes.json();
+      setTotalCount(stats.total_products || 0);
+      setTemizlikCount(stats.temizlik || 0);
+      setAmbalajCount(stats.ambalaj || 0);
+      setGidaCount(stats.gida || 0);
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        setLastImport(settings.last_import || null);
+      }
     } catch {}
   }, []);
 
@@ -99,7 +122,7 @@ export default function AdminScreen() {
     );
   };
 
-  const handleImport = async () => {
+  const doImport = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
         type: [
@@ -132,7 +155,8 @@ export default function AdminScreen() {
       const data = await res.json();
 
       if (res.ok) {
-        Alert.alert('Başarılı', `${data.imported} ürün içe aktarıldı.`);
+        if (data.last_import) setLastImport(data.last_import);
+        Alert.alert('Başarılı', `${data.imported} ürün yüklendi.`);
         loadProducts('');
         loadStats();
       } else {
@@ -143,6 +167,17 @@ export default function AdminScreen() {
     } finally {
       setImporting(false);
     }
+  };
+
+  const handleImport = () => {
+    Alert.alert(
+      'Veri Yükle',
+      'Mevcut tüm ürünler silinecek ve dosyadaki ürünler yüklenecek. Devam?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { text: 'Yükle', style: 'destructive', onPress: doImport },
+      ]
+    );
   };
 
   const renderItem = ({ item, index }: { item: Product; index: number }) => (
@@ -172,8 +207,8 @@ export default function AdminScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Stats Bar */}
-      <View style={styles.statsBar}>
+      {/* Stats Section */}
+      <View style={styles.statsSection}>
         <View style={styles.statCards}>
           <View style={styles.statCard}>
             <Text style={styles.statNum}>{totalCount}</Text>
@@ -187,22 +222,34 @@ export default function AdminScreen() {
             <Text style={[styles.statNum, { color: '#8B5CF6' }]}>{ambalajCount}</Text>
             <Text style={styles.statLabel}>Ambalaj</Text>
           </View>
+          <View style={[styles.statCard, styles.statCardGida]}>
+            <Text style={[styles.statNum, { color: '#F97316' }]}>{gidaCount}</Text>
+            <Text style={styles.statLabel}>Gıda</Text>
+          </View>
         </View>
-        <TouchableOpacity
-          testID="import-btn"
-          style={[styles.importBtn, importing && { opacity: 0.6 }]}
-          onPress={handleImport}
-          disabled={importing}
-        >
-          {importing ? (
-            <ActivityIndicator size="small" color="#0A0A0A" />
-          ) : (
-            <Upload size={18} color="#0A0A0A" />
+
+        <View style={styles.importSection}>
+          <TouchableOpacity
+            testID="import-btn"
+            style={[styles.importBtn, importing && { opacity: 0.6 }]}
+            onPress={handleImport}
+            disabled={importing}
+          >
+            {importing ? (
+              <ActivityIndicator size="small" color="#0A0A0A" />
+            ) : (
+              <Upload size={18} color="#0A0A0A" />
+            )}
+            <Text style={styles.importBtnText}>
+              {importing ? 'Yükleniyor...' : 'Excel / CSV Yükle'}
+            </Text>
+          </TouchableOpacity>
+          {lastImport && (
+            <Text style={styles.lastImportText}>
+              Son yükleme: {formatImportDate(lastImport)}
+            </Text>
           )}
-          <Text style={styles.importBtnText}>
-            {importing ? 'Yükleniyor...' : 'CSV/Excel Yükle'}
-          </Text>
-        </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}
@@ -259,38 +306,45 @@ export default function AdminScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  statsBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 12,
+  statsSection: {
     backgroundColor: C.surface,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
+    padding: 12,
+    gap: 10,
   },
-  statCards: { flexDirection: 'row', gap: 8 },
+  statCards: { flexDirection: 'row', gap: 6 },
   statCard: {
     alignItems: 'center',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: C.highlight,
-    minWidth: 60,
+    minWidth: 54,
+    flex: 1,
   },
   statCardTemizlik: { backgroundColor: 'rgba(59,130,246,0.12)' },
   statCardAmbalaj: { backgroundColor: 'rgba(139,92,246,0.12)' },
-  statNum: { color: C.primary, fontSize: 28, fontWeight: '900' },
-  statLabel: { color: C.sub, fontSize: 12, fontWeight: '500' },
+  statCardGida: { backgroundColor: 'rgba(249,115,22,0.12)' },
+  statNum: { color: C.primary, fontSize: 22, fontWeight: '900' },
+  statLabel: { color: C.sub, fontSize: 10, fontWeight: '500' },
+  importSection: { gap: 6 },
   importBtn: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
     backgroundColor: C.primary,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 13,
     borderRadius: 10,
   },
-  importBtnText: { color: '#0A0A0A', fontWeight: '700', fontSize: 13 },
+  importBtnText: { color: '#0A0A0A', fontWeight: '700', fontSize: 14 },
+  lastImportText: {
+    color: C.sub,
+    fontSize: 11,
+    textAlign: 'center',
+  },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',

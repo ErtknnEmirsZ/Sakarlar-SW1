@@ -20,9 +20,10 @@ const C = {
   error: '#EF4444',
   temizlik: '#3B82F6',
   ambalaj: '#8B5CF6',
+  gida: '#F97316',
 };
 
-type Category = 'temizlik' | 'ambalaj';
+type Category = 'temizlik' | 'ambalaj' | 'gida';
 
 export default function AddProductScreen() {
   const { productId } = useLocalSearchParams<{ productId?: string }>();
@@ -46,7 +47,10 @@ export default function AddProductScreen() {
           setName(p.product_name || '');
           setBarcode(p.barcode || '');
           setPrice(String(p.price ?? '').replace('.', ','));
-          setCategory((p.category === 'ambalaj' ? 'ambalaj' : 'temizlik') as Category);
+          const cat = p.category;
+          if (cat === 'ambalaj') setCategory('ambalaj');
+          else if (cat === 'gida') setCategory('gida');
+          else setCategory('temizlik');
         })
         .catch(() => Alert.alert('Hata', 'Ürün yüklenemedi'))
         .finally(() => setLoading(false));
@@ -141,7 +145,7 @@ export default function AddProductScreen() {
                 style={[styles.catBtn, category === 'temizlik' && styles.catBtnActiveTemizlik]}
                 onPress={() => setCategory('temizlik')}
               >
-                <Text style={[styles.catBtnText, category === 'temizlik' && styles.catBtnTextActive]}>
+                <Text style={[styles.catBtnText, category === 'temizlik' && { color: C.temizlik }]}>
                   Temizlik
                 </Text>
               </TouchableOpacity>
@@ -150,8 +154,17 @@ export default function AddProductScreen() {
                 style={[styles.catBtn, category === 'ambalaj' && styles.catBtnActiveAmbalaj]}
                 onPress={() => setCategory('ambalaj')}
               >
-                <Text style={[styles.catBtnText, category === 'ambalaj' && styles.catBtnTextActive]}>
+                <Text style={[styles.catBtnText, category === 'ambalaj' && { color: C.ambalaj }]}>
                   Ambalaj
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="category-gida"
+                style={[styles.catBtn, category === 'gida' && styles.catBtnActiveGida]}
+                onPress={() => setCategory('gida')}
+              >
+                <Text style={[styles.catBtnText, category === 'gida' && { color: C.gida }]}>
+                  Gıda
                 </Text>
               </TouchableOpacity>
             </View>
@@ -230,7 +243,7 @@ export default function AddProductScreen() {
           {isEdit && (
             <TouchableOpacity
               testID="delete-product-btn"
-              style={styles.deleteBtn}
+              style={styles.deleteBtnRow}
               onPress={handleDelete}
             >
               <Trash2 size={18} color={C.error} />
@@ -264,7 +277,7 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 16,
   },
-  catRow: { flexDirection: 'row', gap: 10 },
+  catRow: { flexDirection: 'row', gap: 8 },
   catBtn: {
     flex: 1,
     paddingVertical: 14,
@@ -282,8 +295,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(139,92,246,0.15)',
     borderColor: '#8B5CF6',
   },
-  catBtnText: { color: C.sub, fontSize: 15, fontWeight: '600' },
-  catBtnTextActive: { color: C.text },
+  catBtnActiveGida: {
+    backgroundColor: 'rgba(249,115,22,0.15)',
+    borderColor: '#F97316',
+  },
+  catBtnText: { color: C.sub, fontSize: 14, fontWeight: '600' },
   barcodeRow: { flexDirection: 'row', gap: 8 },
   scanBtn: {
     width: 52, height: 52,
@@ -303,7 +319,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveBtnText: { color: '#0A0A0A', fontSize: 17, fontWeight: '800' },
-  deleteBtn: {
+  deleteBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

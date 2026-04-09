@@ -7,7 +7,7 @@ import logging
 import uuid
 from pathlib import Path
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 import pandas as pd
 import io
@@ -32,18 +32,18 @@ def normalize_turkish(text: str) -> str:
     text = text.lower()
     for src, dst in [
         ('ç', 'c'), ('ğ', 'g'), ('ı', 'i'), ('ö', 'o'), ('ş', 's'), ('ü', 'u'),
-        ('Ç', 'c'), ('Ğ', 'g'), ('İ', 'i'), ('Ö', 'o'), ('Ş', 's'), ('Ü', 'u')
+        ('Ç', 'c'), ('Ğ', 'g'), ('İ', 'i'), ('Ö', 'o'), ('Ş', 's'), ('Ü', 'u'),
     ]:
         text = text.replace(src, dst)
     return text
 
 
-# ─── Pydantic models ──────────────────────────────────────────────────────────
+# ─── Models ───────────────────────────────────────────────────────────────────
 class ProductCreate(BaseModel):
     product_name: str
     barcode: str
     price: float
-    category: str = "temizlik"   # temizlik | ambalaj
+    category: str = "temizlik"          # temizlik | ambalaj | gida
 
 
 class ProductUpdate(BaseModel):
@@ -70,9 +70,31 @@ async def get_cached_products() -> List[dict]:
     return _products_cache
 
 
+# ─── Priority sort ────────────────────────────────────────────────────────────
+def ts_to_neg(ts: Optional[str]) -> float:
+    """Converts ISO timestamp to negative float for descending sort. None → +inf."""
+    if not ts:
+        return float('inf')
+    try:
+        return -datetime.fromisoformat(ts.replace('Z', '+00:00')).timestamp()
+    except Exception:
+        return float('inf')
+
+
+def sort_by_priority(results: List[Tuple[dict, float]]) -> List[dict]:
+    """Sort: most popular → recently searched → by fuzzy score."""
+    results.sort(key=lambda x: (
+        -(x[0].get('search_count', 0) or 0),   # popular first
+        ts_to_neg(x[0].get('last_searched_at')),  # recently searched
+        -x[1],                                    # highest fuzzy score
+    ))
+    return [r[0] for r in results]
+
+
+# ─── Fuzzy search ─────────────────────────────────────────────────────────────
 def fuzzy_search(products: List[dict], query: str, threshold: int = 35) -> List[dict]:
     norm_q = normalize_turkish(query)
-    results = []
+    results: List[Tuple[dict, float]] = []
     for p in products:
         sn = p.get('search_name', normalize_turkish(p['product_name']))
         score = max(
@@ -82,8 +104,24 @@ def fuzzy_search(products: List[dict], query: str, threshold: int = 35) -> List[
         )
         if score >= threshold:
             results.append((p, score))
-    results.sort(key=lambda x: x[1], reverse=True)
-    return [r[0] for r in results[:80]]
+    return sort_by_priority(results)[:80]
+
+
+# ─── Count helper (in-place, no full cache invalidation) ─────────────────────
+async def increment_product_count(product_id: str):
+    now = datetime.now(timezone.utc).isoformat()
+    await db.products.update_one(
+        {"id": product_id},
+        {"$inc": {"search_count": 1}, "$set": {"last_searched_at": now}},
+    )
+    # Update in-memory cache entry directly
+    global _products_cache
+    if _products_cache:
+        for p in _products_cache:
+            if p.get('id') == product_id:
+                p['search_count'] = (p.get('search_count') or 0) + 1
+                p['last_searched_at'] = now
+                break
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -93,10 +131,11 @@ async def get_products(q: Optional[str] = None, category: Optional[str] = None):
     # Category filter
     if category and category not in ('all', 'tumu', ''):
         products = [p for p in products if p.get('category', '') == category]
-    # Fuzzy search
-    if q and q.strip():
-        return fuzzy_search(products, q.strip())
-    return products
+    # No query → return all, sorted by popularity
+    if not q or not q.strip():
+        sorted_all = sort_by_priority([(p, 0) for p in products])
+        return sorted_all
+    return fuzzy_search(products, q.strip())
 
 
 @api_router.post("/products/import")
@@ -136,39 +175,78 @@ async def import_products(file: UploadFile = File(...)):
     if not all([name_col, barcode_col, price_col]):
         raise HTTPException(
             status_code=400,
-            detail="Sütunlar bulunamadı. CSV'de: product_name, barcode, price sütunları olmalıdır."
+            detail="Sütunlar bulunamadı. CSV'de: product_name, barcode, price gereklidir."
         )
 
     to_insert = []
+    seen_barcodes: set = set()
     now = datetime.now(timezone.utc).isoformat()
     for _, row in df.iterrows():
         try:
             name = str(row[name_col]).strip()
             barcode = str(row[barcode_col]).strip()
-            price_str = str(row[price_col]).replace(',', '.').strip()
-            price = float(price_str)
-            category = str(row[cat_col]).strip().lower() if cat_col else "temizlik"
-            if category not in ('temizlik', 'ambalaj'):
-                category = 'temizlik'
-            if name and barcode and name != 'nan' and price >= 0:
-                to_insert.append({
-                    "id": str(uuid.uuid4()),
-                    "product_name": name,
-                    "barcode": barcode,
-                    "price": price,
-                    "category": category,
-                    "search_name": normalize_turkish(name),
-                    "created_at": now,
-                    "updated_at": now,
-                })
+            # Skip if name or barcode is missing/nan
+            if not name or not barcode or name == 'nan' or barcode == 'nan':
+                continue
+            # Price: default to 0 if missing
+            try:
+                price_str = str(row[price_col]).replace(',', '.').strip()
+                price = float(price_str) if price_str and price_str != 'nan' else 0.0
+            except Exception:
+                price = 0.0
+            raw_cat = str(row[cat_col]).strip().lower() if cat_col else ''
+            # Normalize common Turkish variants
+            cat_map = {
+                'temizlik': 'temizlik',
+                'ambalaj': 'ambalaj',
+                'gida': 'gida', 'gıda': 'gida', 'g\u0131da': 'gida',
+            }
+            category = cat_map.get(raw_cat, 'diger')
+            # Deduplicate by barcode (keep last occurrence)
+            seen_barcodes.add(barcode)
+            to_insert.append({
+                "id": str(uuid.uuid4()),
+                "product_name": name,
+                "barcode": barcode,
+                "price": price,
+                "category": category,
+                "search_name": normalize_turkish(name),
+                "search_count": 0,
+                "last_searched_at": None,
+                "created_at": now,
+                "updated_at": now,
+            })
         except Exception:
             continue
 
-    if to_insert:
-        await db.products.insert_many(to_insert)
-        await invalidate_cache()
+    # Deduplicate: keep last occurrence per barcode
+    deduped: dict = {}
+    for p in to_insert:
+        deduped[p['barcode']] = p
+    to_insert = list(deduped.values())
 
-    return {"imported": len(to_insert), "total": len(df), "skipped": len(df) - len(to_insert)}
+    if not to_insert:
+        return {"imported": 0, "total": len(df), "skipped": len(df), "last_import": None}
+
+    # Replace ALL products
+    await db.products.delete_many({})
+    await db.products.insert_many(to_insert)
+    await invalidate_cache()
+
+    # Track last import timestamp
+    now_import = datetime.now(timezone.utc).isoformat()
+    await db.settings.update_one(
+        {"key": "last_import"},
+        {"$set": {"value": now_import}},
+        upsert=True,
+    )
+
+    return {
+        "imported": len(to_insert),
+        "total": len(df),
+        "skipped": len(df) - len(to_insert),
+        "last_import": now_import,
+    }
 
 
 @api_router.get("/products/barcode/{barcode}")
@@ -176,8 +254,18 @@ async def get_by_barcode(barcode: str):
     products = await get_cached_products()
     for p in products:
         if p.get('barcode') == barcode:
+            # Auto-increment on successful scan (fire and forget)
+            import asyncio
+            asyncio.create_task(increment_product_count(p['id']))
             return p
     raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+
+
+@api_router.post("/products/{product_id}/view")
+async def view_product(product_id: str):
+    """Called when a product detail page is opened."""
+    await increment_product_count(product_id)
+    return {"ok": True}
 
 
 @api_router.get("/products/{product_id}")
@@ -198,6 +286,8 @@ async def create_product(data: ProductCreate):
         "price": data.price,
         "category": data.category,
         "search_name": normalize_turkish(data.product_name),
+        "search_count": 0,
+        "last_searched_at": None,
         "created_at": now,
         "updated_at": now,
     }
@@ -232,101 +322,143 @@ async def delete_product(product_id: str):
 
 @api_router.get("/stats")
 async def get_stats():
-    count = await db.products.count_documents({})
+    total = await db.products.count_documents({})
     temizlik = await db.products.count_documents({"category": "temizlik"})
     ambalaj = await db.products.count_documents({"category": "ambalaj"})
-    return {"total_products": count, "temizlik": temizlik, "ambalaj": ambalaj}
+    gida = await db.products.count_documents({"category": "gida"})
+    return {"total_products": total, "temizlik": temizlik, "ambalaj": ambalaj, "gida": gida}
+
+
+@api_router.get("/settings")
+async def get_settings():
+    setting = await db.settings.find_one({"key": "last_import"}, {"_id": 0})
+    return {"last_import": setting["value"] if setting else None}
 
 
 # ─── Include router ───────────────────────────────────────────────────────────
 app.include_router(api_router)
-
 app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    CORSMiddleware, allow_credentials=True,
+    allow_origins=["*"], allow_methods=["*"], allow_headers=["*"],
 )
 
 
-# ─── Seed data (ONLY cleaning & packaging) ───────────────────────────────────
-SEED_PRODUCTS = [
-    # ── TEMİZLİK ──────────────────────────────────────────────
-    ("Çöp Poşeti Büyük Boy 10'lu",        "8690001001001", 12.50,  "temizlik"),
-    ("Çöp Poşeti Orta Boy 20'li",          "8690001001002",  9.90,  "temizlik"),
-    ("Çöp Poşeti Küçük Boy 30'lu",         "8690001001003",  7.75,  "temizlik"),
-    ("Çamaşır Suyu 5L",                    "8690001001004", 85.00,  "temizlik"),
-    ("Çamaşır Suyu 1L",                    "8690001001005", 22.50,  "temizlik"),
-    ("Bulaşık Deterjanı 750ml",            "8690001001006", 38.90,  "temizlik"),
-    ("Bulaşık Deterjanı 3L",               "8690001001007", 95.00,  "temizlik"),
-    ("Toz Deterjan 3kg",                   "8690001001008",145.00,  "temizlik"),
-    ("Çamaşır Makinesi Kapsülü 30'lu",     "8690001001009",185.00,  "temizlik"),
-    ("Yumuşatıcı 1L",                      "8690001001010", 48.50,  "temizlik"),
-    ("WC Temizleyici 750ml",               "8690001001011", 32.00,  "temizlik"),
-    ("Banyo Temizleyici 750ml",            "8690001001012", 35.00,  "temizlik"),
-    ("Cam Temizleyici 750ml",              "8690001001013", 28.00,  "temizlik"),
-    ("Yüzey Temizleyici 1L",               "8690001001014", 42.00,  "temizlik"),
-    ("Kağıt Havlu 4'lü",                   "8690001001015", 32.50,  "temizlik"),
-    ("Kağıt Havlu 8'li",                   "8690001001016", 58.00,  "temizlik"),
-    ("Tuvalet Kağıdı 12'li",               "8690001001017", 72.00,  "temizlik"),
-    ("Islak Mendil 80'li",                 "8690001001018", 22.00,  "temizlik"),
-    ("Sünger Sarı-Yeşil 5'li",             "8690001001019", 18.50,  "temizlik"),
-    ("El Sabunu 500ml",                    "8690001001020", 35.00,  "temizlik"),
-    ("Dezenfektan Sprey 1L",               "8690001001021", 65.00,  "temizlik"),
-    ("Klor 4L",                            "8690001001022", 55.00,  "temizlik"),
-    ("Yağ Çözücü Sprey 500ml",             "8690001001023", 45.00,  "temizlik"),
-    ("Peçete 100'lü",                      "8690001001024", 12.00,  "temizlik"),
-    ("Havlu Dispenser Kağıt 200'lü",       "8690001001025", 48.00,  "temizlik"),
-    # ── AMBALAJ ───────────────────────────────────────────────
-    ("Streç Film 50cm x 300m",             "8690001002001",125.00,  "ambalaj"),
-    ("Streç Film 100cm x 100m",            "8690001002002",185.00,  "ambalaj"),
-    ("Koli Bandı 45mm x 100m",             "8690001002003", 22.00,  "ambalaj"),
-    ("Koli Bandı 50mm x 100m",             "8690001002004", 28.00,  "ambalaj"),
-    ("Koli Bandı Şeffaf 12'li Paket",      "8690001002005",145.00,  "ambalaj"),
-    ("Kraft Kağıt 50cm x 50m",             "8690001002006", 85.00,  "ambalaj"),
-    ("Balonlu Naylon 50cm x 50m",          "8690001002007", 95.00,  "ambalaj"),
-    ("Kağıt Poşet Büyük 100'lü",           "8690001002008", 65.00,  "ambalaj"),
-    ("Kağıt Poşet Küçük 100'lü",           "8690001002009", 45.00,  "ambalaj"),
-    ("Plastik Torba 25x35 1000'li",        "8690001002010", 85.00,  "ambalaj"),
-    ("Plastik Torba 35x50 500'li",         "8690001002011", 72.00,  "ambalaj"),
-    ("Etiket Rulo 100x150 500'li",         "8690001002012",125.00,  "ambalaj"),
-    ("Etiket Rulo 50x30 1000'li",          "8690001002013", 95.00,  "ambalaj"),
-    ("Nakliye Kolisi 30x30x30",            "8690001002014", 12.50,  "ambalaj"),
-    ("Nakliye Kolisi 40x40x40",            "8690001002015", 18.00,  "ambalaj"),
-    ("Nakliye Kolisi 60x40x40",            "8690001002016", 25.00,  "ambalaj"),
-    ("Köpük Naylon Rulo 1m x 50m",         "8690001002017",155.00,  "ambalaj"),
-    ("Karton Bölücü 30x30",                "8690001002018",  8.50,  "ambalaj"),
-    ("Vakum Torbası 30x40 10'lu",          "8690001002019", 35.00,  "ambalaj"),
-    ("Streç Eldiven L Beden 100'lü",       "8690001002020", 45.00,  "ambalaj"),
+# ─── Seed data ────────────────────────────────────────────────────────────────
+SEED_TEMIZLIK = [
+    ("Çöp Poşeti Büyük Boy 10'lu",        "8690001001001",  12.50),
+    ("Çöp Poşeti Orta Boy 20'li",          "8690001001002",   9.90),
+    ("Çöp Poşeti Küçük Boy 30'lu",         "8690001001003",   7.75),
+    ("Çamaşır Suyu 5L",                    "8690001001004",  85.00),
+    ("Çamaşır Suyu 1L",                    "8690001001005",  22.50),
+    ("Bulaşık Deterjanı 750ml",            "8690001001006",  38.90),
+    ("Bulaşık Deterjanı 3L",               "8690001001007",  95.00),
+    ("Toz Deterjan 3kg",                   "8690001001008", 145.00),
+    ("Çamaşır Makinesi Kapsülü 30'lu",     "8690001001009", 185.00),
+    ("Yumuşatıcı 1L",                      "8690001001010",  48.50),
+    ("WC Temizleyici 750ml",               "8690001001011",  32.00),
+    ("Banyo Temizleyici 750ml",            "8690001001012",  35.00),
+    ("Cam Temizleyici 750ml",              "8690001001013",  28.00),
+    ("Yüzey Temizleyici 1L",               "8690001001014",  42.00),
+    ("Kağıt Havlu 4'lü",                   "8690001001015",  32.50),
+    ("Kağıt Havlu 8'li",                   "8690001001016",  58.00),
+    ("Tuvalet Kağıdı 12'li",               "8690001001017",  72.00),
+    ("Islak Mendil 80'li",                 "8690001001018",  22.00),
+    ("Sünger Sarı-Yeşil 5'li",             "8690001001019",  18.50),
+    ("El Sabunu 500ml",                    "8690001001020",  35.00),
+    ("Dezenfektan Sprey 1L",               "8690001001021",  65.00),
+    ("Klor 4L",                            "8690001001022",  55.00),
+    ("Yağ Çözücü Sprey 500ml",             "8690001001023",  45.00),
+    ("Peçete 100'lü",                      "8690001001024",  12.00),
+    ("Havlu Dispenser Kağıt 200'lü",       "8690001001025",  48.00),
 ]
+
+SEED_AMBALAJ = [
+    ("Streç Film 50cm x 300m",             "8690001002001", 125.00),
+    ("Streç Film 100cm x 100m",            "8690001002002", 185.00),
+    ("Koli Bandı 45mm x 100m",             "8690001002003",  22.00),
+    ("Koli Bandı 50mm x 100m",             "8690001002004",  28.00),
+    ("Koli Bandı Şeffaf 12'li Paket",      "8690001002005", 145.00),
+    ("Kraft Kağıt 50cm x 50m",             "8690001002006",  85.00),
+    ("Balonlu Naylon 50cm x 50m",          "8690001002007",  95.00),
+    ("Kağıt Poşet Büyük 100'lü",           "8690001002008",  65.00),
+    ("Kağıt Poşet Küçük 100'lü",           "8690001002009",  45.00),
+    ("Plastik Torba 25x35 1000'li",        "8690001002010",  85.00),
+    ("Plastik Torba 35x50 500'li",         "8690001002011",  72.00),
+    ("Etiket Rulo 100x150 500'li",         "8690001002012", 125.00),
+    ("Etiket Rulo 50x30 1000'li",          "8690001002013",  95.00),
+    ("Nakliye Kolisi 30x30x30",            "8690001002014",  12.50),
+    ("Nakliye Kolisi 40x40x40",            "8690001002015",  18.00),
+    ("Nakliye Kolisi 60x40x40",            "8690001002016",  25.00),
+    ("Köpük Naylon Rulo 1m x 50m",         "8690001002017", 155.00),
+    ("Karton Bölücü 30x30",                "8690001002018",   8.50),
+    ("Vakum Torbası 30x40 10'lu",          "8690001002019",  35.00),
+    ("Streç Eldiven L Beden 100'lü",       "8690001002020",  45.00),
+]
+
+SEED_GIDA = [
+    ("Tuz 1kg",                            "8690001003001",   7.50),
+    ("Şeker 1kg",                          "8690001003002",  25.00),
+    ("Un 1kg",                             "8690001003003",  15.75),
+    ("Makarna 500g",                       "8690001003004",  14.90),
+    ("Pirinç 1kg",                         "8690001003005",  42.00),
+    ("Nescafe 200g",                       "8690001003006", 125.00),
+    ("Çay Demlik Poşet 100'lü",            "8690001003007",  85.00),
+    ("Ayçiçek Yağı 1L",                    "8690001003008",  65.00),
+    ("Zeytinyağı 750ml",                   "8690001003009", 145.00),
+    ("Su 5L",                              "8690001003010",  12.00),
+]
+
+
+def make_doc(name: str, barcode: str, price: float, category: str, now: str) -> dict:
+    return {
+        "id": str(uuid.uuid4()),
+        "product_name": name,
+        "barcode": barcode,
+        "price": price,
+        "category": category,
+        "search_name": normalize_turkish(name),
+        "search_count": 0,
+        "last_searched_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
 
 
 @app.on_event("startup")
 async def startup():
-    # Re-seed if no products or if products lack category field
     count = await db.products.count_documents({})
     sample = await db.products.find_one({})
-    needs_reseed = count == 0 or (sample and 'category' not in sample)
 
-    if needs_reseed:
+    # Full reseed if no products or old schema (no category)
+    if count == 0 or (sample and 'category' not in sample):
         await db.products.drop()
         now = datetime.now(timezone.utc).isoformat()
-        products = [
-            {
-                "id": str(uuid.uuid4()),
-                "product_name": name,
-                "barcode": barcode,
-                "price": price,
-                "category": category,
-                "search_name": normalize_turkish(name),
-                "created_at": now,
-                "updated_at": now,
-            }
-            for name, barcode, price, category in SEED_PRODUCTS
-        ]
-        await db.products.insert_many(products)
-        logger.info(f"Re-seeded {len(products)} products (temizlik + ambalaj)")
+        docs = (
+            [make_doc(n, b, p, 'temizlik', now) for n, b, p in SEED_TEMIZLIK] +
+            [make_doc(n, b, p, 'ambalaj', now) for n, b, p in SEED_AMBALAJ] +
+            [make_doc(n, b, p, 'gida', now) for n, b, p in SEED_GIDA]
+        )
+        await db.products.insert_many(docs)
+        logger.info(f"Full reseed: {len(docs)} products")
+        return
+
+    # Migration 1: add search_count / last_searched_at to old docs
+    if sample and 'search_count' not in sample:
+        await db.products.update_many(
+            {"search_count": {"$exists": False}},
+            {"$set": {"search_count": 0, "last_searched_at": None}},
+        )
+        await invalidate_cache()
+        logger.info("Migrated: added search_count field")
+
+    # Migration 2: add gıda products if missing
+    gida_count = await db.products.count_documents({"category": "gida"})
+    if gida_count == 0:
+        now = datetime.now(timezone.utc).isoformat()
+        docs = [make_doc(n, b, p, 'gida', now) for n, b, p in SEED_GIDA]
+        await db.products.insert_many(docs)
+        await invalidate_cache()
+        logger.info(f"Migration: added {len(docs)} gıda products")
 
 
 @app.on_event("shutdown")

@@ -21,17 +21,19 @@ const C = {
   border: '#2E2E2E',
   temizlik: '#3B82F6',
   ambalaj: '#8B5CF6',
+  gida: '#F97316',
 };
 
-const ITEM_HEIGHT = 68;
+const ITEM_HEIGHT = 72;
 
 const CATEGORIES = [
-  { key: 'all', label: 'Tümü' },
+  { key: 'all',      label: 'Tümü'     },
   { key: 'temizlik', label: 'Temizlik' },
-  { key: 'ambalaj', label: 'Ambalaj' },
+  { key: 'ambalaj',  label: 'Ambalaj'  },
+  { key: 'gida',     label: 'Gıda'     },
 ] as const;
 
-type CategoryKey = 'all' | 'temizlik' | 'ambalaj';
+type CategoryKey = 'all' | 'temizlik' | 'ambalaj' | 'gida';
 
 interface Product {
   id: string;
@@ -39,6 +41,7 @@ interface Product {
   barcode: string;
   price: number;
   category: string;
+  search_count?: number;
 }
 
 export default function MainScreen() {
@@ -88,6 +91,18 @@ export default function MainScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
+  const getCatLabel = (cat: string) => {
+    if (cat === 'ambalaj') return 'Ambalaj';
+    if (cat === 'gida') return 'Gıda';
+    return 'Temizlik';
+  };
+
+  const getCatStyle = (cat: string) => {
+    if (cat === 'ambalaj') return styles.catBadgeAmbalaj;
+    if (cat === 'gida') return styles.catBadgeGida;
+    return styles.catBadgeTemizlik;
+  };
+
   const renderItem = useCallback(({ item, index }: { item: Product; index: number }) => (
     <TouchableOpacity
       testID={`product-item-${index}`}
@@ -96,14 +111,14 @@ export default function MainScreen() {
       activeOpacity={0.6}
     >
       <View style={styles.rowLeft}>
-        <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
-        <View style={[
-          styles.catBadge,
-          item.category === 'ambalaj' ? styles.catBadgeAmbalaj : styles.catBadgeTemizlik
-        ]}>
-          <Text style={styles.catBadgeText}>
-            {item.category === 'ambalaj' ? 'Ambalaj' : 'Temizlik'}
-          </Text>
+        <View style={styles.rowNameRow}>
+          {(item.search_count ?? 0) >= 3 && (
+            <Text style={styles.popBadge}>🔥</Text>
+          )}
+          <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
+        </View>
+        <View style={[styles.catBadge, getCatStyle(item.category)]}>
+          <Text style={styles.catBadgeText}>{getCatLabel(item.category)}</Text>
         </View>
       </View>
       <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
@@ -119,6 +134,7 @@ export default function MainScreen() {
   const catColor = (cat: CategoryKey) => {
     if (cat === 'temizlik') return C.temizlik;
     if (cat === 'ambalaj') return C.ambalaj;
+    if (cat === 'gida') return C.gida;
     return C.primary;
   };
 
@@ -349,7 +365,10 @@ const styles = StyleSheet.create({
   },
   catBadgeTemizlik: { backgroundColor: 'rgba(59,130,246,0.2)' },
   catBadgeAmbalaj: { backgroundColor: 'rgba(139,92,246,0.2)' },
+  catBadgeGida: { backgroundColor: 'rgba(249,115,22,0.2)' },
   catBadgeText: { fontSize: 10, fontWeight: '700', color: C.sub },
+  rowNameRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
+  popBadge: { fontSize: 13, marginRight: 4, lineHeight: 20 },
   rowPrice: {
     color: C.primary,
     fontSize: 22,

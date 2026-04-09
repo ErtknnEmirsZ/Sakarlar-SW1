@@ -18,6 +18,7 @@ const C = {
   border: '#2E2E2E',
   temizlik: '#3B82F6',
   ambalaj: '#8B5CF6',
+  gida: '#F97316',
 };
 
 interface Product {
@@ -62,8 +63,12 @@ export default function ProductDetail() {
     );
   }
 
-  const catColor = product.category === 'ambalaj' ? C.ambalaj : C.temizlik;
-  const catLabel = product.category === 'ambalaj' ? 'Ambalaj' : 'Temizlik';
+  const catColor =
+    product.category === 'ambalaj' ? C.ambalaj :
+    product.category === 'gida' ? C.gida : C.temizlik;
+  const catLabel =
+    product.category === 'ambalaj' ? 'Ambalaj' :
+    product.category === 'gida' ? 'Gıda' : 'Temizlik';
 
   return (
     <SafeAreaView style={styles.container} testID="product-detail">
