@@ -1,22 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, SafeAreaView,
-  ActivityIndicator, TouchableOpacity, Share,
+  ActivityIndicator, TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Package, Barcode, ArrowLeft } from 'lucide-react-native';
 import { formatPrice } from '../../utils/format';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
-  bg: '#0A0A0A',
-  surface: '#1A1A1A',
-  highlight: '#262626',
-  primary: '#EAB308',
+  bg: '#0F0F0F',
+  surface: '#1C1C1C',
+  highlight: '#2A2A2A',
+  primary: '#F5C518',
   text: '#FFFFFF',
-  sub: '#A3A3A3',
-  border: '#2A2A2A',
+  sub: '#9A9A9A',
+  border: '#2E2E2E',
+  temizlik: '#3B82F6',
+  ambalaj: '#8B5CF6',
 };
 
 interface Product {
@@ -24,6 +25,7 @@ interface Product {
   product_name: string;
   barcode: string;
   price: number;
+  category: string;
 }
 
 export default function ProductDetail() {
@@ -33,10 +35,10 @@ export default function ProductDetail() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) { setLoading(false); return; }
     fetch(`${BACKEND_URL}/api/products/${id}`)
       .then((r) => r.json())
-      .then(setProduct)
+      .then((data) => { if (data && data.id) setProduct(data); })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, [id]);
@@ -52,97 +54,125 @@ export default function ProductDetail() {
   if (!product) {
     return (
       <View style={styles.center}>
-        <Package size={48} color={C.highlight} />
         <Text style={styles.notFoundText}>Ürün bulunamadı</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>Geri Dön</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
+  const catColor = product.category === 'ambalaj' ? C.ambalaj : C.temizlik;
+  const catLabel = product.category === 'ambalaj' ? 'Ambalaj' : 'Temizlik';
+
   return (
     <SafeAreaView style={styles.container} testID="product-detail">
-      <View style={styles.card}>
-        <Text style={styles.label}>ÜRÜN ADI</Text>
-        <Text style={styles.productName}>{product.product_name}</Text>
-
-        <View style={styles.divider} />
-
+      {/* Price Hero */}
+      <View style={styles.priceHero}>
         <Text style={styles.priceLabel}>FİYAT</Text>
         <Text style={styles.price} testID="product-price">{formatPrice(product.price)}</Text>
+      </View>
+
+      {/* Info Card */}
+      <View style={styles.card}>
+        {/* Category */}
+        <View style={[styles.catBadge, { backgroundColor: catColor + '22', borderColor: catColor + '44' }]}>
+          <Text style={[styles.catText, { color: catColor }]}>{catLabel.toUpperCase()}</Text>
+        </View>
+
+        {/* Name */}
+        <Text style={styles.nameLabel}>ÜRÜN ADI</Text>
+        <Text style={styles.name}>{product.product_name}</Text>
 
         <View style={styles.divider} />
 
-        <View style={styles.barcodeRow}>
-          <Barcode size={20} color={C.sub} />
-          <Text style={styles.barcodeText}>{product.barcode}</Text>
-        </View>
+        {/* Barcode */}
+        <Text style={styles.barcodeLabel}>BARKOD</Text>
+        <Text style={styles.barcode} testID="product-barcode">{product.barcode}</Text>
       </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: C.bg,
-    padding: 20,
-  },
+  container: { flex: 1, backgroundColor: C.bg },
   center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.bg,
-    gap: 16,
+    flex: 1, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.bg, gap: 16,
   },
   notFoundText: { color: C.sub, fontSize: 16 },
-  card: {
+  backBtn: {
+    paddingHorizontal: 24, paddingVertical: 12,
+    borderRadius: 10, backgroundColor: C.highlight,
+  },
+  backBtnText: { color: C.text, fontSize: 15, fontWeight: '600' },
+
+  // Price Hero
+  priceHero: {
     backgroundColor: C.surface,
-    borderRadius: 16,
-    padding: 24,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  label: {
-    color: C.sub,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    marginBottom: 8,
-  },
-  productName: {
-    color: C.text,
-    fontSize: 24,
-    fontWeight: '700',
-    lineHeight: 30,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: C.border,
-    marginVertical: 20,
+    alignItems: 'center',
+    paddingVertical: 36,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
   },
   priceLabel: {
     color: C.sub,
     fontSize: 11,
     fontWeight: '700',
-    letterSpacing: 1.5,
+    letterSpacing: 2,
     marginBottom: 8,
   },
   price: {
     color: C.primary,
-    fontSize: 56,
+    fontSize: 64,
     fontWeight: '900',
     letterSpacing: -2,
-    lineHeight: 60,
+    lineHeight: 70,
   },
-  barcodeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+
+  // Info Card
+  card: {
+    margin: 16,
+    backgroundColor: C.surface,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  barcodeText: {
+  catBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  catText: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  nameLabel: {
     color: C.sub,
-    fontSize: 14,
-    fontFamily: 'monospace',
-    letterSpacing: 1,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  name: {
+    color: C.text,
+    fontSize: 22,
+    fontWeight: '700',
+    lineHeight: 28,
+  },
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 18 },
+  barcodeLabel: {
+    color: C.sub,
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 6,
+  },
+  barcode: {
+    color: C.sub,
+    fontSize: 16,
+    letterSpacing: 2,
+    fontVariant: ['tabular-nums'],
   },
 });

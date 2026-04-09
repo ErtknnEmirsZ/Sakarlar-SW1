@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator, Platform,
-  KeyboardAvoidingView,
+  KeyboardAvoidingView, ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -12,23 +12,33 @@ import { formatPrice } from '../utils/format';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
-  bg: '#0A0A0A',
-  surface: '#1A1A1A',
-  highlight: '#262626',
-  primary: '#EAB308',
+  bg: '#0F0F0F',
+  surface: '#1C1C1C',
+  highlight: '#2A2A2A',
+  primary: '#F5C518',
   text: '#FFFFFF',
-  sub: '#A3A3A3',
-  border: '#2A2A2A',
-  error: '#EF4444',
+  sub: '#9A9A9A',
+  border: '#2E2E2E',
+  temizlik: '#3B82F6',
+  ambalaj: '#8B5CF6',
 };
 
-const ITEM_HEIGHT = 64;
+const ITEM_HEIGHT = 68;
+
+const CATEGORIES = [
+  { key: 'all', label: 'Tümü' },
+  { key: 'temizlik', label: 'Temizlik' },
+  { key: 'ambalaj', label: 'Ambalaj' },
+] as const;
+
+type CategoryKey = 'all' | 'temizlik' | 'ambalaj';
 
 interface Product {
   id: string;
   product_name: string;
   barcode: string;
   price: number;
+  category: string;
 }
 
 export default function MainScreen() {
@@ -36,57 +46,81 @@ export default function MainScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [speedMode, setSpeedMode] = useState(false);
+  const [category, setCategory] = useState<CategoryKey>('all');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
 
-  const fetchProducts = useCallback(async (q: string) => {
+  const fetchProducts = useCallback(async (q: string, cat: CategoryKey) => {
     try {
-      const url = q.trim()
-        ? `${BACKEND_URL}/api/products?q=${encodeURIComponent(q.trim())}`
-        : `${BACKEND_URL}/api/products`;
+      const params = new URLSearchParams();
+      if (q.trim()) params.set('q', q.trim());
+      if (cat !== 'all') params.set('category', cat);
+      const url = `${BACKEND_URL}/api/products${params.toString() ? '?' + params.toString() : ''}`;
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
-      setProducts(data);
+      setProducts(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error('Fetch error:', e);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchProducts('');
+    fetchProducts('', 'all');
   }, []);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     setLoading(true);
     searchTimer.current = setTimeout(() => {
-      fetchProducts(query);
+      fetchProducts(query, category);
     }, 150);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-  }, [query, fetchProducts]);
+  }, [query, category, fetchProducts]);
+
+  const handleCategoryChange = (cat: CategoryKey) => {
+    setCategory(cat);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  };
 
   const renderItem = useCallback(({ item, index }: { item: Product; index: number }) => (
     <TouchableOpacity
       testID={`product-item-${index}`}
       style={styles.row}
       onPress={() => router.push(`/product/${item.id}`)}
-      activeOpacity={0.65}
+      activeOpacity={0.6}
     >
-      <Text style={styles.rowName} numberOfLines={1}>{item.product_name}</Text>
+      <View style={styles.rowLeft}>
+        <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
+        <View style={[
+          styles.catBadge,
+          item.category === 'ambalaj' ? styles.catBadgeAmbalaj : styles.catBadgeTemizlik
+        ]}>
+          <Text style={styles.catBadgeText}>
+            {item.category === 'ambalaj' ? 'Ambalaj' : 'Temizlik'}
+          </Text>
+        </View>
+      </View>
       <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
     </TouchableOpacity>
   ), [router]);
 
-  const getItemLayout = useCallback((_: any, index: number) => ({
+  const getItemLayout = useCallback((_: unknown, index: number) => ({
     length: ITEM_HEIGHT,
     offset: ITEM_HEIGHT * index,
     index,
   }), []);
+
+  const catColor = (cat: CategoryKey) => {
+    if (cat === 'temizlik') return C.temizlik;
+    if (cat === 'ambalaj') return C.ambalaj;
+    return C.primary;
+  };
 
   return (
     <KeyboardAvoidingView
@@ -94,6 +128,7 @@ export default function MainScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <SafeAreaView style={styles.container}>
+
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Şakarlar SW</Text>
@@ -102,16 +137,34 @@ export default function MainScreen() {
             style={styles.headerBtn}
             onPress={() => router.push('/admin')}
           >
-            <Settings size={22} color={C.sub} />
+            <Settings size={20} color={C.sub} />
           </TouchableOpacity>
         </View>
 
-        {/* Product Count */}
-        {!loading && (
-          <View style={styles.countBar}>
-            <Text style={styles.countText}>{products.length} ürün</Text>
-          </View>
-        )}
+        {/* Category Filter */}
+        <View style={styles.catBar}>
+          {CATEGORIES.map((c) => {
+            const active = category === c.key;
+            return (
+              <TouchableOpacity
+                key={c.key}
+                testID={`category-${c.key}`}
+                style={[
+                  styles.catBtn,
+                  active && { backgroundColor: catColor(c.key as CategoryKey), borderColor: catColor(c.key as CategoryKey) },
+                ]}
+                onPress={() => handleCategoryChange(c.key as CategoryKey)}
+              >
+                <Text style={[styles.catBtnText, active && styles.catBtnTextActive]}>
+                  {c.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          {!loading && (
+            <Text style={styles.countPill}>{products.length}</Text>
+          )}
+        </View>
 
         {/* Product List */}
         <FlatList
@@ -123,7 +176,7 @@ export default function MainScreen() {
           keyboardShouldPersistTaps="handled"
           removeClippedSubviews
           maxToRenderPerBatch={20}
-          initialNumToRender={25}
+          initialNumToRender={20}
           windowSize={10}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -131,9 +184,12 @@ export default function MainScreen() {
                 <ActivityIndicator color={C.primary} size="large" />
               ) : (
                 <>
-                  <Package size={48} color={C.highlight} />
-                  <Text style={styles.emptyText}>
-                    {query.length > 0 ? 'Ürün bulunamadı' : 'Ürün listesi yükleniyor...'}
+                  <Package size={52} color={C.highlight} />
+                  <Text style={styles.emptyTitle}>
+                    {query.length > 0 ? 'Ürün bulunamadı' : 'Ürün yok'}
+                  </Text>
+                  <Text style={styles.emptyHint}>
+                    {query.length > 0 ? `"${query}" için sonuç yok` : 'Arama yapın veya barkod tarayın'}
                   </Text>
                 </>
               )}
@@ -149,10 +205,10 @@ export default function MainScreen() {
             style={[styles.speedBtn, speedMode && styles.speedBtnActive]}
             onPress={() => {
               setSpeedMode(!speedMode);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
             }}
           >
-            <Zap size={14} color={speedMode ? '#0A0A0A' : C.sub} strokeWidth={2.5} />
+            <Zap size={15} color={speedMode ? '#0A0A0A' : C.sub} strokeWidth={2.5} />
             <Text style={[styles.speedText, speedMode && styles.speedTextActive]}>
               HIZ MODU {speedMode ? 'AÇIK' : 'KAPALI'}
             </Text>
@@ -190,7 +246,7 @@ export default function MainScreen() {
                 })
               }
             >
-              <Camera size={26} color="#0A0A0A" strokeWidth={2} />
+              <Camera size={26} color="#0A0A0A" strokeWidth={2.5} />
             </TouchableOpacity>
           </View>
         </View>
@@ -201,6 +257,8 @@ export default function MainScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
+
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -213,65 +271,110 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: C.text,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
   },
   headerBtn: {
-    padding: 6,
-    borderRadius: 8,
+    width: 38,
+    height: 38,
+    borderRadius: 10,
     backgroundColor: C.highlight,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  countBar: {
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    backgroundColor: C.bg,
+
+  // Category bar
+  catBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: C.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: C.border,
+    gap: 8,
   },
-  countText: {
+  catBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: 'transparent',
+  },
+  catBtnText: {
+    color: C.sub,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  catBtnTextActive: {
+    color: '#0A0A0A',
+  },
+  countPill: {
+    marginLeft: 'auto' as any,
     color: C.sub,
     fontSize: 12,
-    fontWeight: '500',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    fontWeight: '600',
+    backgroundColor: C.highlight,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
+
+  // List
   list: { flex: 1 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    height: ITEM_HEIGHT,
+    paddingVertical: 12,
+    minHeight: ITEM_HEIGHT,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
+  rowLeft: { flex: 1, marginRight: 10 },
   rowName: {
-    flex: 1,
     color: C.text,
     fontSize: 15,
     fontWeight: '500',
-    marginRight: 12,
+    lineHeight: 20,
+    marginBottom: 4,
   },
+  catBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  catBadgeTemizlik: { backgroundColor: 'rgba(59,130,246,0.2)' },
+  catBadgeAmbalaj: { backgroundColor: 'rgba(139,92,246,0.2)' },
+  catBadgeText: { fontSize: 10, fontWeight: '700', color: C.sub },
   rowPrice: {
     color: C.primary,
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '900',
     letterSpacing: -0.5,
+    minWidth: 90,
+    textAlign: 'right',
   },
+
+  // Empty
   empty: {
-    flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     paddingTop: 80,
-    gap: 16,
+    paddingHorizontal: 24,
+    gap: 10,
   },
-  emptyText: {
-    color: C.sub,
-    fontSize: 15,
-    textAlign: 'center',
-  },
+  emptyTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+  emptyHint: { color: C.sub, fontSize: 14, textAlign: 'center' },
+
+  // Bottom Bar
   bottomBar: {
     backgroundColor: C.surface,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 4 : 10,
     borderTopWidth: 1,
     borderTopColor: C.border,
     gap: 8,
@@ -281,27 +384,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'center',
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: C.highlight,
   },
-  speedBtnActive: {
-    backgroundColor: C.primary,
-  },
-  speedText: {
-    color: C.sub,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
-  },
-  speedTextActive: {
-    color: '#0A0A0A',
-  },
-  searchRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
+  speedBtnActive: { backgroundColor: C.primary },
+  speedText: { color: C.sub, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
+  speedTextActive: { color: '#0A0A0A' },
+  searchRow: { flexDirection: 'row', gap: 8 },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
@@ -309,7 +400,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.highlight,
     borderRadius: 12,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 13,
     gap: 8,
   },
   searchInput: {
@@ -319,9 +410,9 @@ const styles = StyleSheet.create({
     padding: 0,
   },
   scanBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 12,
+    width: 54,
+    height: 54,
+    borderRadius: 14,
     backgroundColor: C.primary,
     alignItems: 'center',
     justifyContent: 'center',

@@ -10,15 +10,19 @@ import { Camera, Save, Trash2 } from 'lucide-react-native';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
-  bg: '#0A0A0A',
-  surface: '#1A1A1A',
-  highlight: '#262626',
-  primary: '#EAB308',
+  bg: '#0F0F0F',
+  surface: '#1C1C1C',
+  highlight: '#2A2A2A',
+  primary: '#F5C518',
   text: '#FFFFFF',
-  sub: '#A3A3A3',
-  border: '#2A2A2A',
+  sub: '#9A9A9A',
+  border: '#2E2E2E',
   error: '#EF4444',
+  temizlik: '#3B82F6',
+  ambalaj: '#8B5CF6',
 };
+
+type Category = 'temizlik' | 'ambalaj';
 
 export default function AddProductScreen() {
   const { productId } = useLocalSearchParams<{ productId?: string }>();
@@ -27,6 +31,7 @@ export default function AddProductScreen() {
   const [name, setName] = useState('');
   const [barcode, setBarcode] = useState('');
   const [price, setPrice] = useState('');
+  const [category, setCategory] = useState<Category>('temizlik');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -37,16 +42,18 @@ export default function AddProductScreen() {
       fetch(`${BACKEND_URL}/api/products/${productId}`)
         .then((r) => r.json())
         .then((p) => {
-          setName(p.product_name);
-          setBarcode(p.barcode);
-          setPrice(String(p.price).replace('.', ','));
+          if (!p || !p.id) return;
+          setName(p.product_name || '');
+          setBarcode(p.barcode || '');
+          setPrice(String(p.price ?? '').replace('.', ','));
+          setCategory((p.category === 'ambalaj' ? 'ambalaj' : 'temizlik') as Category);
         })
         .catch(() => Alert.alert('Hata', 'Ürün yüklenemedi'))
         .finally(() => setLoading(false));
     }
   }, [productId]);
 
-  // Check for scanned barcode from scanner
+  // Receive barcode from scanner
   useFocusEffect(
     useCallback(() => {
       import('../../utils/scanStore').then(({ scanStore }) => {
@@ -54,36 +61,22 @@ export default function AddProductScreen() {
           setBarcode(scanStore.pendingBarcode);
           scanStore.pendingBarcode = null;
         }
-      });
+      }).catch(() => {});
     }, [])
   );
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      Alert.alert('Uyarı', 'Ürün adı zorunludur');
-      return;
-    }
-    if (!barcode.trim()) {
-      Alert.alert('Uyarı', 'Barkod zorunludur');
-      return;
-    }
+    const trimName = name.trim();
+    const trimBarcode = barcode.trim();
+    if (!trimName) { Alert.alert('Uyarı', 'Ürün adı zorunludur'); return; }
+    if (!trimBarcode) { Alert.alert('Uyarı', 'Barkod zorunludur'); return; }
     const priceNum = parseFloat(price.replace(',', '.'));
-    if (isNaN(priceNum) || priceNum < 0) {
-      Alert.alert('Uyarı', 'Geçerli bir fiyat girin');
-      return;
-    }
+    if (isNaN(priceNum) || priceNum < 0) { Alert.alert('Uyarı', 'Geçerli bir fiyat girin'); return; }
 
     setSaving(true);
     try {
-      const body = {
-        product_name: name.trim(),
-        barcode: barcode.trim(),
-        price: priceNum,
-      };
-
-      const url = isEdit
-        ? `${BACKEND_URL}/api/products/${productId}`
-        : `${BACKEND_URL}/api/products`;
+      const body = { product_name: trimName, barcode: trimBarcode, price: priceNum, category };
+      const url = isEdit ? `${BACKEND_URL}/api/products/${productId}` : `${BACKEND_URL}/api/products`;
       const method = isEdit ? 'PUT' : 'POST';
 
       const res = await fetch(url, {
@@ -95,7 +88,7 @@ export default function AddProductScreen() {
       if (res.ok) {
         router.back();
       } else {
-        const err = await res.json();
+        const err = await res.json().catch(() => ({}));
         Alert.alert('Hata', err.detail || 'Kayıt başarısız');
       }
     } catch {
@@ -139,6 +132,32 @@ export default function AddProductScreen() {
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
 
+          {/* Category Picker */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>KATEGORİ *</Text>
+            <View style={styles.catRow}>
+              <TouchableOpacity
+                testID="category-temizlik"
+                style={[styles.catBtn, category === 'temizlik' && styles.catBtnActiveTemizlik]}
+                onPress={() => setCategory('temizlik')}
+              >
+                <Text style={[styles.catBtnText, category === 'temizlik' && styles.catBtnTextActive]}>
+                  Temizlik
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID="category-ambalaj"
+                style={[styles.catBtn, category === 'ambalaj' && styles.catBtnActiveAmbalaj]}
+                onPress={() => setCategory('ambalaj')}
+              >
+                <Text style={[styles.catBtnText, category === 'ambalaj' && styles.catBtnTextActive]}>
+                  Ambalaj
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Product Name */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>ÜRÜN ADI *</Text>
             <TextInput
@@ -152,6 +171,7 @@ export default function AddProductScreen() {
             />
           </View>
 
+          {/* Barcode */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>BARKOD *</Text>
             <View style={styles.barcodeRow}>
@@ -168,15 +188,14 @@ export default function AddProductScreen() {
               <TouchableOpacity
                 testID="scan-barcode-btn"
                 style={styles.scanBtn}
-                onPress={() =>
-                  router.push({ pathname: '/scanner', params: { mode: 'select' } })
-                }
+                onPress={() => router.push({ pathname: '/scanner', params: { mode: 'select' } })}
               >
                 <Camera size={22} color="#0A0A0A" />
               </TouchableOpacity>
             </View>
           </View>
 
+          {/* Price */}
           <View style={styles.fieldGroup}>
             <Text style={styles.fieldLabel}>FİYAT (₺) *</Text>
             <TextInput
@@ -190,6 +209,7 @@ export default function AddProductScreen() {
             />
           </View>
 
+          {/* Save Button */}
           <TouchableOpacity
             testID="save-product-btn"
             style={[styles.saveBtn, saving && { opacity: 0.6 }]}
@@ -206,6 +226,7 @@ export default function AddProductScreen() {
             </Text>
           </TouchableOpacity>
 
+          {/* Delete Button (edit only) */}
           {isEdit && (
             <TouchableOpacity
               testID="delete-product-btn"
@@ -224,10 +245,7 @@ export default function AddProductScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg },
-  center: {
-    flex: 1, alignItems: 'center',
-    justifyContent: 'center', backgroundColor: C.bg,
-  },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg },
   scroll: { padding: 20, gap: 20 },
   fieldGroup: { gap: 8 },
   fieldLabel: {
@@ -246,6 +264,26 @@ const styles = StyleSheet.create({
     color: C.text,
     fontSize: 16,
   },
+  catRow: { flexDirection: 'row', gap: 10 },
+  catBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    alignItems: 'center',
+    backgroundColor: C.surface,
+  },
+  catBtnActiveTemizlik: {
+    backgroundColor: 'rgba(59,130,246,0.15)',
+    borderColor: '#3B82F6',
+  },
+  catBtnActiveAmbalaj: {
+    backgroundColor: 'rgba(139,92,246,0.15)',
+    borderColor: '#8B5CF6',
+  },
+  catBtnText: { color: C.sub, fontSize: 15, fontWeight: '600' },
+  catBtnTextActive: { color: C.text },
   barcodeRow: { flexDirection: 'row', gap: 8 },
   scanBtn: {
     width: 52, height: 52,
