@@ -147,7 +147,7 @@ export default function MainScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Şakarlar SW</Text>
+          <Text style={styles.headerTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>SpecTrun & Şakarlar SW</Text>
           <TouchableOpacity
             testID="admin-button"
             style={styles.headerBtn}
@@ -287,9 +287,11 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: C.text,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '900',
     letterSpacing: -0.3,
+    flex: 1,
+    marginRight: 8,
   },
   headerBtn: {
     width: 38,
