@@ -1,0 +1,84 @@
+{
+  "project": "Şakarlar SW",
+  "domain": "Warehouse Inventory & Price Checking",
+  "theme": "Dark",
+  "archetype": "2 (Performance Pro) - Tactical Minimalism",
+  "reasoning": "A warehouse tool requires command-center focus, low glare in dark environments, and high-visibility data points for instant price scanning. Dark background with stark white text and electric yellow accents provides maximum utility.",
+  "colors": {
+    "background": "#0A0A0A",
+    "surface": "#1A1A1A",
+    "surface_highlight": "#262626",
+    "primary": "#EAB308",
+    "primary_hover": "#CA8A04",
+    "text_primary": "#FFFFFF",
+    "text_secondary": "#A3A3A3",
+    "success": "#22C55E",
+    "error": "#EF4444",
+    "border": "#262626",
+    "scanner_overlay": "rgba(0, 0, 0, 0.7)"
+  },
+  "typography": {
+    "primary_font": "System",
+    "weights": {
+      "regular": "400",
+      "bold": "700",
+      "black": "900"
+    },
+    "scale": {
+      "h1_price": "text-5xl or text-6xl (absolute massive size for one-glance reading)",
+      "h2": "text-2xl (product names)",
+      "body": "text-base",
+      "caption": "text-sm text-secondary tracking-wider uppercase"
+    },
+    "rules": [
+      "Prices MUST use fontWeight '900' and tight tracking.",
+      "Never center-align product lists; always left-align names and right-align prices.",
+      "Avoid extra decorative elements."
+    ]
+  },
+  "layout_and_spacing": {
+    "ergonomics": "ONE-HAND OPERATION. The primary search input and scanner toggle MUST be anchored to the BOTTOM of the screen above the keyboard/safe area.",
+    "padding": "Generous touch targets (min 48px height) for all buttons and inputs. Use p-4 to p-6 inside cards.",
+    "lists": "Dense but readable. Flat backgrounds with 1px border. No soft shadows."
+  },
+  "components": {
+    "search_bar": {
+      "position": "Bottom fixed",
+      "features": "Fuzzy search with Turkish char support. Massive input field. Clear 'X' button to reset instantly. Auto-focus optimized."
+    },
+    "product_list": {
+      "style": "Flat rows, bottom border only (border-b border-[#262626]). Left side: Name (white). Right side: Price (Yellow, huge). Flat structure without wrapping in heavy cards."
+    },
+    "scanner_view": {
+      "overlay": "Camera full screen. Black 70% opacity overlay with a central clear rectangle.",
+      "indicators": "Pulsing 1px electric yellow border around the scan window when 'Speed Mode' is active."
+    },
+    "speed_mode_toggle": {
+      "style": "Prominent floating action button or inline pill near the bottom right of the search area. High-contrast active state."
+    },
+    "admin_panel": {
+      "style": "Standard top-down layout. Prominent massive dropzone/button for Excel/CSV upload."
+    }
+  },
+  "motion_and_haptics": {
+    "haptics": "MANDATORY. Heavy vibration on successful scan, double vibration on error/not found.",
+    "animations": "Instant. Zero ease-in-out delays. Optimize for speed and volume scanning. Snap transitions."
+  },
+  "icons_and_assets": {
+    "library": "lucide-react-native",
+    "rules": [
+      "Use icons heavily for empty states (e.g., Box icon, SearchX) and UI actions.",
+      "No rounded, soft icons. Keep them sharp."
+    ],
+    "image_urls": [
+      {
+        "category": "empty_state",
+        "description": "Minimal dark background for the empty states if an image is strictly required, though Lucide icons are preferred.",
+        "url": "https://images.unsplash.com/photo-1610118620484-ed5eb821d518?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2Nzh8MHwxfHNlYXJjaHwxfHx3YXJlaG91c2UlMjBtaW5pbWFsJTIwZGFya3xlbnwwfHx8fDE3NzU3NjQxOTR8MA&ixlib=rb-4.1.0&q=85"
+      }
+    ]
+  },
+  "testing": {
+    "data_testid_rule": "Every interactive element (inputs, buttons, list items, toggles, scan results) MUST have a `data-testid` attribute in kebab-case format (e.g., search-input, product-card, speed-mode-toggle)."
+  }
+}
