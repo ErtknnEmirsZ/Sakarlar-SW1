@@ -237,4 +237,14 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-    message: "Fixed all critical bugs (setGidaCount crash, duplicate styles syntax error in admin/index.tsx). Added Gıda category to admin/add.tsx. Updated server.py import to DELETE ALL + INSERT with last_import tracking. Added /api/settings endpoint. Screenshots confirm all screens working. Ready for backend import testing."
+    message: "v4 MAJOR UPDATE COMPLETE. All features implemented and screenshots verified:
+    1. Branding: SpecTrun SW & Şakarlar with ST logo badge (gold) in header
+    2. Admin auth: Settings → login (Emir/Ertekinelvan54) → AdminPanel. AsyncStorage persists auth.
+    3. Admin protection: Auth gate shows on /admin and /admin/add when not logged in.
+    4. Speed mode: 2 second delay + CameraView remount (scanKey) for proper camera reset.
+    5. Scanner: Centered (vertically) with slightly taller frame (0.38 ratio).
+    6. Stock status: var/az/yok with colored badges in list + detail page. Admin can edit.
+    7. VAT price: vat_excluded_price field shown below main price on detail page.
+    8. Colorful UI: Gold accent strip, colored category left stripes, vibrant filters.
+    9. New backend endpoints: PUT /api/products/{id}/stock, GET /api/settings.
+    10. Excel/CSV import handles stock_status and vat_excluded_price columns."
