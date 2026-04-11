@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, FlatList, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator, Platform,
-  KeyboardAvoidingView, ScrollView,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
@@ -13,18 +13,21 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
   bg: '#0F0F0F',
-  surface: '#1C1C1C',
-  highlight: '#2A2A2A',
+  surface: '#1A1A1A',
+  highlight: '#252525',
   primary: '#F5C518',
   text: '#FFFFFF',
   sub: '#9A9A9A',
-  border: '#2E2E2E',
+  border: '#2A2A2A',
   temizlik: '#3B82F6',
   ambalaj: '#8B5CF6',
   gida: '#F97316',
+  success: '#22C55E',
+  warning: '#FBBF24',
+  danger: '#EF4444',
 };
 
-const ITEM_HEIGHT = 72;
+const ITEM_HEIGHT = 78;
 
 const CATEGORIES = [
   { key: 'all',      label: 'Tümü'     },
@@ -41,8 +44,29 @@ interface Product {
   barcode: string;
   price: number;
   category: string;
+  stock_status?: string;
+  vat_excluded_price?: number | null;
   search_count?: number;
 }
+
+const getCatLabel = (cat: string) => {
+  if (cat === 'ambalaj') return 'Ambalaj';
+  if (cat === 'gida') return 'Gıda';
+  if (cat === 'diger') return 'Diğer';
+  return 'Temizlik';
+};
+
+const getCatBadgeStyle = (cat: string) => {
+  if (cat === 'ambalaj') return styles.catBadgeAmbalaj;
+  if (cat === 'gida') return styles.catBadgeGida;
+  return styles.catBadgeTemizlik;
+};
+
+const getCatTextStyle = (cat: string) => {
+  if (cat === 'ambalaj') return { color: C.ambalaj };
+  if (cat === 'gida') return { color: C.gida };
+  return { color: C.temizlik };
+};
 
 export default function MainScreen() {
   const [query, setQuery] = useState('');
@@ -81,9 +105,7 @@ export default function MainScreen() {
     searchTimer.current = setTimeout(() => {
       fetchProducts(query, category);
     }, 150);
-    return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    };
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
   }, [query, category, fetchProducts]);
 
   const handleCategoryChange = (cat: CategoryKey) => {
@@ -91,16 +113,11 @@ export default function MainScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
   };
 
-  const getCatLabel = (cat: string) => {
-    if (cat === 'ambalaj') return 'Ambalaj';
-    if (cat === 'gida') return 'Gıda';
-    return 'Temizlik';
-  };
-
-  const getCatStyle = (cat: string) => {
-    if (cat === 'ambalaj') return styles.catBadgeAmbalaj;
-    if (cat === 'gida') return styles.catBadgeGida;
-    return styles.catBadgeTemizlik;
+  const catAccent = (cat: CategoryKey) => {
+    if (cat === 'temizlik') return C.temizlik;
+    if (cat === 'ambalaj') return C.ambalaj;
+    if (cat === 'gida') return C.gida;
+    return C.primary;
   };
 
   const renderItem = useCallback(({ item, index }: { item: Product; index: number }) => (
@@ -108,20 +125,48 @@ export default function MainScreen() {
       testID={`product-item-${index}`}
       style={styles.row}
       onPress={() => router.push(`/product/${item.id}`)}
-      activeOpacity={0.6}
+      activeOpacity={0.55}
     >
-      <View style={styles.rowLeft}>
-        <View style={styles.rowNameRow}>
-          {(item.search_count ?? 0) >= 3 && (
-            <Text style={styles.popBadge}>🔥</Text>
-          )}
-          <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
+      {/* Category color stripe */}
+      <View style={[styles.catStripe, getCatBadgeStyle(item.category)]} />
+
+      <View style={styles.rowMain}>
+        <View style={styles.rowLeft}>
+          {/* Name row */}
+          <View style={styles.nameRow}>
+            {(item.search_count ?? 0) >= 3 && (
+              <Text style={styles.popBadge}>🔥</Text>
+            )}
+            <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
+          </View>
+          {/* Badges row */}
+          <View style={styles.badgesRow}>
+            <View style={[styles.catBadge, getCatBadgeStyle(item.category)]}>
+              <Text style={[styles.catBadgeText, getCatTextStyle(item.category)]}>
+                {getCatLabel(item.category)}
+              </Text>
+            </View>
+            {item.stock_status === 'yok' && (
+              <View style={[styles.stockBadge, styles.stockBadgeYok]}>
+                <Text style={styles.stockTextYok}>Tüken</Text>
+              </View>
+            )}
+            {item.stock_status === 'az' && (
+              <View style={[styles.stockBadge, styles.stockBadgeAz]}>
+                <Text style={styles.stockTextAz}>Az Kaldı</Text>
+              </View>
+            )}
+          </View>
         </View>
-        <View style={[styles.catBadge, getCatStyle(item.category)]}>
-          <Text style={styles.catBadgeText}>{getCatLabel(item.category)}</Text>
+
+        {/* Price */}
+        <View style={styles.priceCol}>
+          <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
+          {item.stock_status === 'yok' && (
+            <Text style={styles.outOfStockSmall}>Stokta Yok</Text>
+          )}
         </View>
       </View>
-      <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
     </TouchableOpacity>
   ), [router]);
 
@@ -130,13 +175,6 @@ export default function MainScreen() {
     offset: ITEM_HEIGHT * index,
     index,
   }), []);
-
-  const catColor = (cat: CategoryKey) => {
-    if (cat === 'temizlik') return C.temizlik;
-    if (cat === 'ambalaj') return C.ambalaj;
-    if (cat === 'gida') return C.gida;
-    return C.primary;
-  };
 
   return (
     <KeyboardAvoidingView
@@ -147,38 +185,57 @@ export default function MainScreen() {
 
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.headerTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>SpecTrun & Şakarlar SW</Text>
-          <TouchableOpacity
-            testID="admin-button"
-            style={styles.headerBtn}
-            onPress={() => router.push('/admin')}
-          >
-            <Settings size={20} color={C.sub} />
-          </TouchableOpacity>
+          <View style={styles.accentStrip} />
+          <View style={styles.headerContent}>
+            <View style={styles.logoRow}>
+              <View style={styles.logoBadge}>
+                <Text style={styles.logoBadgeText}>ST</Text>
+              </View>
+              <View>
+                <Text style={styles.headerTitle}>SpecTrun SW</Text>
+                <Text style={styles.headerSubTitle}>& Şakarlar</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              testID="settings-button"
+              style={styles.headerBtn}
+              onPress={() => router.push('/settings')}
+            >
+              <Settings size={20} color={C.sub} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Category Filter */}
         <View style={styles.catBar}>
-          {CATEGORIES.map((c) => {
-            const active = category === c.key;
-            return (
-              <TouchableOpacity
-                key={c.key}
-                testID={`category-${c.key}`}
-                style={[
-                  styles.catBtn,
-                  active && { backgroundColor: catColor(c.key as CategoryKey), borderColor: catColor(c.key as CategoryKey) },
-                ]}
-                onPress={() => handleCategoryChange(c.key as CategoryKey)}
-              >
-                <Text style={[styles.catBtnText, active && styles.catBtnTextActive]}>
-                  {c.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+          <View style={styles.catBtns}>
+            {CATEGORIES.map((c) => {
+              const active = category === c.key;
+              const acc = catAccent(c.key as CategoryKey);
+              return (
+                <TouchableOpacity
+                  key={c.key}
+                  testID={`category-${c.key}`}
+                  style={[
+                    styles.catBtn,
+                    active && { backgroundColor: acc + '22', borderColor: acc },
+                  ]}
+                  onPress={() => handleCategoryChange(c.key as CategoryKey)}
+                >
+                  <Text style={[
+                    styles.catBtnText,
+                    active && { color: acc, fontWeight: '700' },
+                  ]}>
+                    {c.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
           {!loading && (
-            <Text style={styles.countPill}>{products.length}</Text>
+            <View style={styles.countBadge}>
+              <Text style={styles.countText}>{products.length}</Text>
+            </View>
           )}
         </View>
 
@@ -200,12 +257,10 @@ export default function MainScreen() {
                 <ActivityIndicator color={C.primary} size="large" />
               ) : (
                 <>
-                  <Package size={52} color={C.highlight} />
-                  <Text style={styles.emptyTitle}>
-                    {query.length > 0 ? 'Ürün bulunamadı' : 'Ürün yok'}
-                  </Text>
-                  <Text style={styles.emptyHint}>
-                    {query.length > 0 ? `"${query}" için sonuç yok` : 'Arama yapın veya barkod tarayın'}
+                  <Package size={44} color={C.highlight} strokeWidth={1.5} />
+                  <Text style={styles.emptyTitle}>Ürün bulunamadı</Text>
+                  <Text style={styles.emptySub}>
+                    {query ? `"${query}" için sonuç yok` : 'Arama kutusuna yazabilirsiniz'}
                   </Text>
                 </>
               )}
@@ -213,59 +268,54 @@ export default function MainScreen() {
           }
         />
 
-        {/* Bottom Bar */}
+        {/* Bottom Action Bar */}
         <View style={styles.bottomBar}>
-          {/* Speed Mode */}
+          {/* Speed Mode Toggle */}
           <TouchableOpacity
-            testID="speed-mode-toggle"
+            testID="speed-mode-btn"
             style={[styles.speedBtn, speedMode && styles.speedBtnActive]}
             onPress={() => {
               setSpeedMode(!speedMode);
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
             }}
           >
-            <Zap size={15} color={speedMode ? '#0A0A0A' : C.sub} strokeWidth={2.5} />
-            <Text style={[styles.speedText, speedMode && styles.speedTextActive]}>
-              HIZ MODU {speedMode ? 'AÇIK' : 'KAPALI'}
+            <Zap size={14} color={speedMode ? '#0A0A0A' : C.sub} fill={speedMode ? '#0A0A0A' : 'none'} />
+            <Text style={[styles.speedBtnText, speedMode && styles.speedBtnTextActive]}>
+              {speedMode ? 'Hız Modu AÇİK' : 'Hız Modu'}
             </Text>
           </TouchableOpacity>
 
-          {/* Search Row */}
-          <View style={styles.searchRow}>
-            <View style={styles.searchBox}>
-              <Search size={18} color={C.sub} />
-              <TextInput
-                testID="search-input"
-                style={styles.searchInput}
-                placeholder="Ürün adı ara..."
-                placeholderTextColor={C.sub}
-                value={query}
-                onChangeText={setQuery}
-                autoCorrect={false}
-                autoCapitalize="none"
-                returnKeyType="search"
-              />
-              {query.length > 0 && (
-                <TouchableOpacity testID="clear-search" onPress={() => setQuery('')}>
-                  <X size={18} color={C.sub} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <TouchableOpacity
-              testID="scan-button"
-              style={styles.scanBtn}
-              onPress={() =>
-                router.push({
-                  pathname: '/scanner',
-                  params: { speedMode: speedMode ? '1' : '0' },
-                })
-              }
-            >
-              <Camera size={26} color="#0A0A0A" strokeWidth={2.5} />
-            </TouchableOpacity>
+          {/* Search Input */}
+          <View style={styles.searchBox}>
+            <Search size={15} color={C.sub} />
+            <TextInput
+              testID="search-input"
+              style={styles.searchInput}
+              placeholder="Ürün ara..."
+              placeholderTextColor={C.sub}
+              value={query}
+              onChangeText={setQuery}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => setQuery('')}>
+                <X size={14} color={C.sub} />
+              </TouchableOpacity>
+            )}
           </View>
+
+          {/* Scanner Button */}
+          <TouchableOpacity
+            testID="scanner-button"
+            style={styles.scanBtn}
+            onPress={() => router.push({ pathname: '/scanner', params: { speedMode: speedMode ? '1' : '0' } })}
+          >
+            <Camera size={22} color="#0A0A0A" />
+          </TouchableOpacity>
         </View>
+
       </SafeAreaView>
     </KeyboardAvoidingView>
   );
@@ -276,33 +326,61 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
     backgroundColor: C.surface,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
   },
-  headerTitle: {
-    color: C.text,
-    fontSize: 18,
-    fontWeight: '900',
-    letterSpacing: -0.3,
-    flex: 1,
-    marginRight: 8,
+  accentStrip: {
+    height: 3,
+    backgroundColor: C.primary,
   },
-  headerBtn: {
+  headerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  logoBadge: {
     width: 38,
     height: 38,
+    borderRadius: 9,
+    backgroundColor: C.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  logoBadgeText: {
+    color: '#0A0A0A',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  headerTitle: {
+    color: C.text,
+    fontSize: 16,
+    fontWeight: '900',
+    letterSpacing: -0.3,
+  },
+  headerSubTitle: {
+    color: C.primary,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  headerBtn: {
+    width: 38, height: 38,
     borderRadius: 10,
     backgroundColor: C.highlight,
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  // Category bar
+  // Category Bar
   catBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -311,91 +389,137 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
-    gap: 8,
+    gap: 6,
+  },
+  catBtns: {
+    flexDirection: 'row',
+    flex: 1,
+    gap: 6,
   },
   catBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    flex: 1,
+    paddingVertical: 7,
     borderRadius: 20,
-    borderWidth: 1.5,
+    borderWidth: 1,
     borderColor: C.border,
-    backgroundColor: 'transparent',
+    alignItems: 'center',
+    backgroundColor: C.highlight,
   },
   catBtnText: {
     color: C.sub,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
   },
-  catBtnTextActive: {
-    color: '#0A0A0A',
-  },
-  countPill: {
-    marginLeft: 'auto' as any,
-    color: C.sub,
-    fontSize: 12,
-    fontWeight: '600',
+  countBadge: {
     backgroundColor: C.highlight,
-    paddingHorizontal: 10,
+    borderRadius: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 12,
+    minWidth: 28,
+    alignItems: 'center',
+  },
+  countText: {
+    color: C.sub,
+    fontSize: 11,
+    fontWeight: '700',
   },
 
-  // List
+  // Product List
   list: { flex: 1 },
   row: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: ITEM_HEIGHT,
+    alignItems: 'stretch',
     borderBottomWidth: 1,
     borderBottomColor: C.border,
+    height: ITEM_HEIGHT,
+    backgroundColor: C.bg,
   },
-  rowLeft: { flex: 1, marginRight: 10 },
+  catStripe: {
+    width: 3,
+    alignSelf: 'stretch',
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  rowLeft: {
+    flex: 1,
+    gap: 4,
+    paddingRight: 8,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  popBadge: { fontSize: 12, lineHeight: 18 },
   rowName: {
     color: C.text,
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
-    lineHeight: 20,
-    marginBottom: 4,
+    flex: 1,
+    lineHeight: 19,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    gap: 4,
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
   catBadge: {
-    alignSelf: 'flex-start',
     paddingHorizontal: 7,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderRadius: 5,
+    alignSelf: 'flex-start',
   },
-  catBadgeTemizlik: { backgroundColor: 'rgba(59,130,246,0.2)' },
-  catBadgeAmbalaj: { backgroundColor: 'rgba(139,92,246,0.2)' },
-  catBadgeGida: { backgroundColor: 'rgba(249,115,22,0.2)' },
-  catBadgeText: { fontSize: 10, fontWeight: '700', color: C.sub },
-  rowNameRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 4 },
-  popBadge: { fontSize: 13, marginRight: 4, lineHeight: 20 },
+  catBadgeTemizlik: { backgroundColor: 'rgba(59,130,246,0.12)' },
+  catBadgeAmbalaj: { backgroundColor: 'rgba(139,92,246,0.12)' },
+  catBadgeGida: { backgroundColor: 'rgba(249,115,22,0.12)' },
+  catBadgeText: { fontSize: 10, fontWeight: '700' },
+
+  stockBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+  },
+  stockBadgeAz: { backgroundColor: 'rgba(251,191,36,0.15)' },
+  stockBadgeYok: { backgroundColor: 'rgba(239,68,68,0.15)' },
+  stockTextAz: { color: '#FBBF24', fontSize: 9, fontWeight: '700' },
+  stockTextYok: { color: '#EF4444', fontSize: 9, fontWeight: '700' },
+
+  priceCol: { alignItems: 'flex-end', gap: 2 },
   rowPrice: {
     color: C.primary,
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '900',
     letterSpacing: -0.5,
-    minWidth: 90,
-    textAlign: 'right',
+  },
+  outOfStockSmall: {
+    color: C.danger,
+    fontSize: 9,
+    fontWeight: '600',
   },
 
-  // Empty
+  // Empty state
   empty: {
     alignItems: 'center',
+    justifyContent: 'center',
     paddingTop: 80,
-    paddingHorizontal: 24,
     gap: 10,
   },
-  emptyTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
-  emptyHint: { color: C.sub, fontSize: 14, textAlign: 'center' },
+  emptyTitle: { color: C.sub, fontSize: 16, fontWeight: '600' },
+  emptySub: { color: C.highlight, fontSize: 13 },
 
   // Bottom Bar
   bottomBar: {
-    backgroundColor: C.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 4 : 10,
+    paddingVertical: 10,
+    backgroundColor: C.surface,
     borderTopWidth: 1,
     borderTopColor: C.border,
     gap: 8,
@@ -403,37 +527,36 @@ const styles = StyleSheet.create({
   speedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
+    gap: 4,
+    paddingHorizontal: 9,
     paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.border,
     backgroundColor: C.highlight,
   },
-  speedBtnActive: { backgroundColor: C.primary },
-  speedText: { color: C.sub, fontSize: 11, fontWeight: '800', letterSpacing: 0.8 },
-  speedTextActive: { color: '#0A0A0A' },
-  searchRow: { flexDirection: 'row', gap: 8 },
+  speedBtnActive: {
+    backgroundColor: C.primary,
+    borderColor: C.primary,
+  },
+  speedBtnText: { color: C.sub, fontSize: 10, fontWeight: '600' },
+  speedBtnTextActive: { color: '#0A0A0A' },
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: C.highlight,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 13,
-    gap: 8,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: C.border,
   },
-  searchInput: {
-    flex: 1,
-    color: C.text,
-    fontSize: 16,
-    padding: 0,
-  },
+  searchInput: { flex: 1, color: C.text, fontSize: 14, padding: 0 },
   scanBtn: {
-    width: 54,
-    height: 54,
-    borderRadius: 14,
+    width: 44, height: 44,
+    borderRadius: 10,
     backgroundColor: C.primary,
     alignItems: 'center',
     justifyContent: 'center',

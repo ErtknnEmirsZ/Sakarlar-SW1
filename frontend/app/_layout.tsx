@@ -22,6 +22,7 @@ export default function RootLayout() {
         <Stack.Screen name="product/[id]" options={{ title: 'Ürün Detayı' }} />
         <Stack.Screen name="admin/index" options={{ title: 'Yönetim Paneli' }} />
         <Stack.Screen name="admin/add" options={{ title: 'Ürün Ekle/Düzenle' }} />
+        <Stack.Screen name="settings" options={{ title: 'Ayarlar' }} />
       </Stack>
     </>
   );

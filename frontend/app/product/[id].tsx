@@ -27,6 +27,8 @@ interface Product {
   barcode: string;
   price: number;
   category: string;
+  stock_status?: string;
+  vat_excluded_price?: number | null;
 }
 
 export default function ProductDetail() {
@@ -70,19 +72,35 @@ export default function ProductDetail() {
     product.category === 'ambalaj' ? 'Ambalaj' :
     product.category === 'gida' ? 'Gıda' : 'Temizlik';
 
+  const stockColor = product.stock_status === 'yok' ? '#EF4444' :
+                     product.stock_status === 'az' ? '#FBBF24' : '#22C55E';
+  const stockLabel = product.stock_status === 'yok' ? 'Stokta Yok' :
+                     product.stock_status === 'az' ? 'Az Kaldı' : 'Stokta Var';
+
   return (
     <SafeAreaView style={styles.container} testID="product-detail">
       {/* Price Hero */}
       <View style={styles.priceHero}>
         <Text style={styles.priceLabel}>FİYAT</Text>
         <Text style={styles.price} testID="product-price">{formatPrice(product.price)}</Text>
+        {product.vat_excluded_price != null && product.vat_excluded_price > 0 && (
+          <Text style={styles.vatPrice}>
+            KDV Hariç: {formatPrice(product.vat_excluded_price)}
+          </Text>
+        )}
       </View>
 
       {/* Info Card */}
       <View style={styles.card}>
-        {/* Category */}
-        <View style={[styles.catBadge, { backgroundColor: catColor + '22', borderColor: catColor + '44' }]}>
-          <Text style={[styles.catText, { color: catColor }]}>{catLabel.toUpperCase()}</Text>
+        {/* Category + Stock row */}
+        <View style={styles.badgesRow}>
+          <View style={[styles.catBadge, { backgroundColor: catColor + '22', borderColor: catColor + '44' }]}>
+            <Text style={[styles.catText, { color: catColor }]}>{catLabel.toUpperCase()}</Text>
+          </View>
+          <View style={[styles.stockBadge, { backgroundColor: stockColor + '1A', borderColor: stockColor + '44' }]}>
+            <View style={[styles.stockDot, { backgroundColor: stockColor }]} />
+            <Text style={[styles.stockText, { color: stockColor }]}>{stockLabel}</Text>
+          </View>
         </View>
 
         {/* Name */}
@@ -134,6 +152,12 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
     lineHeight: 70,
   },
+  vatPrice: {
+    color: C.sub,
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 6,
+  },
 
   // Info Card
   card: {
@@ -145,14 +169,29 @@ const styles = StyleSheet.create({
     borderColor: C.border,
   },
   catBadge: {
-    alignSelf: 'flex-start',
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 6,
     borderWidth: 1,
-    marginBottom: 16,
   },
   catText: { fontSize: 11, fontWeight: '800', letterSpacing: 1 },
+  badgesRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+    flexWrap: 'wrap',
+  },
+  stockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+  },
+  stockDot: { width: 6, height: 6, borderRadius: 3 },
+  stockText: { fontSize: 11, fontWeight: '700' },
   nameLabel: {
     color: C.sub,
     fontSize: 11,

@@ -12,10 +12,10 @@ import { formatPrice } from '../utils/format';
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 const { width: SW, height: SH } = Dimensions.get('window');
 
-// ── Rectangle scan window (wide & short for barcodes) ────────────────────────
+// ── Rectangle scan window (wide & slightly tall for barcodes) ───────────────
 const SCAN_W = Math.min(SW * 0.88, 340);
-const SCAN_H = Math.round(SCAN_W * 0.30);         // 3:1 ratio — ideal for 1D barcodes
-const SCAN_TOP = Math.round(SH * 0.30);            // 30% from top
+const SCAN_H = Math.round(SCAN_W * 0.38);         // slightly taller ratio
+const SCAN_TOP = Math.round((SH - SCAN_H) / 2) - 30;  // centered, slightly above middle
 const CORNER = 22;                                  // corner guide size
 
 const C = {
@@ -40,6 +40,7 @@ export default function ScannerScreen() {
   const [scanning, setScanning] = useState(true);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
+  const [scanKey, setScanKey] = useState(0);  // Force camera remount on each scan reset
   const cooldown = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scanLineAnim = useRef(new Animated.Value(0)).current;
@@ -88,6 +89,7 @@ export default function ScannerScreen() {
       }).start(() => {
         setResult(null);
         cooldown.current = false;
+        setScanKey(k => k + 1);  // Force camera remount → fresh focus
         setScanning(true);
       });
     };
@@ -122,9 +124,9 @@ export default function ScannerScreen() {
           return;
         }
 
-        // Speed mode: full screen → auto-return after 1s
+        // Speed mode: full screen → auto-return after 2s, with camera remount
         if (isSpeedMode) {
-          resetScanner(1000);
+          resetScanner(2000);
         }
         // Normal mode: user manually dismisses
       } else {
@@ -171,8 +173,9 @@ export default function ScannerScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Camera */}
+      {/* Camera — key forces remount after each scan reset for fresh focus */}
       <CameraView
+        key={scanKey}
         style={StyleSheet.absoluteFillObject}
         facing="back"
         barcodeScannerSettings={{

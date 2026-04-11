@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { Camera, Save, Trash2 } from 'lucide-react-native';
+import { authStore } from '../../utils/authStore';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -32,10 +33,19 @@ export default function AddProductScreen() {
   const [name, setName] = useState('');
   const [barcode, setBarcode] = useState('');
   const [price, setPrice] = useState('');
+  const [vatPrice, setVatPrice] = useState('');
   const [category, setCategory] = useState<Category>('temizlik');
+  const [stockStatus, setStockStatus] = useState<'var' | 'az' | 'yok'>('var');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // Auth check on mount
+  useEffect(() => {
+    authStore.init().then((admin) => {
+      if (!admin) router.replace('/settings');
+    });
+  }, []);
 
   useEffect(() => {
     if (isEdit && productId) {
@@ -47,6 +57,8 @@ export default function AddProductScreen() {
           setName(p.product_name || '');
           setBarcode(p.barcode || '');
           setPrice(String(p.price ?? '').replace('.', ','));
+          setVatPrice(p.vat_excluded_price ? String(p.vat_excluded_price).replace('.', ',') : '');
+          setStockStatus((p.stock_status as any) || 'var');
           const cat = p.category;
           if (cat === 'ambalaj') setCategory('ambalaj');
           else if (cat === 'gida') setCategory('gida');
@@ -79,7 +91,15 @@ export default function AddProductScreen() {
 
     setSaving(true);
     try {
-      const body = { product_name: trimName, barcode: trimBarcode, price: priceNum, category };
+      const vatNum = vatPrice.trim() ? parseFloat(vatPrice.replace(',', '.')) : null;
+      const body = {
+        product_name: trimName,
+        barcode: trimBarcode,
+        price: priceNum,
+        category,
+        stock_status: stockStatus,
+        vat_excluded_price: vatNum && !isNaN(vatNum) ? vatNum : null,
+      };
       const url = isEdit ? `${BACKEND_URL}/api/products/${productId}` : `${BACKEND_URL}/api/products`;
       const method = isEdit ? 'PUT' : 'POST';
 
@@ -222,6 +242,41 @@ export default function AddProductScreen() {
             />
           </View>
 
+          {/* VAT Excluded Price */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>KDV HARİÇ FİYAT (₺) — İsteğe Bağlı</Text>
+            <TextInput
+              testID="vat-price-input"
+              style={styles.input}
+              value={vatPrice}
+              onChangeText={setVatPrice}
+              placeholder="Boş bırakılabilir"
+              placeholderTextColor={C.sub}
+              keyboardType="decimal-pad"
+            />
+          </View>
+
+          {/* Stock Status */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>STOK DURUMU</Text>
+            <View style={styles.stockRow}>
+              {([ ['var', 'Stokta Var', '#22C55E'], ['az', 'Az Kaldı', '#FBBF24'], ['yok', 'Tükendi', '#EF4444'] ] as const).map(([key, label, color]) => (
+                <TouchableOpacity
+                  key={key}
+                  testID={`stock-${key}`}
+                  style={[
+                    styles.stockBtn,
+                    stockStatus === key && { backgroundColor: color + '22', borderColor: color },
+                  ]}
+                  onPress={() => setStockStatus(key)}
+                >
+                  <View style={[styles.stockDot, { backgroundColor: stockStatus === key ? color : C.border }]} />
+                  <Text style={[styles.stockBtnText, stockStatus === key && { color }]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
           {/* Save Button */}
           <TouchableOpacity
             testID="save-product-btn"
@@ -319,6 +374,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveBtnText: { color: '#0A0A0A', fontSize: 17, fontWeight: '800' },
+  stockRow: { flexDirection: 'row', gap: 8 },
+  stockBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    backgroundColor: C.surface,
+  },
+  stockDot: { width: 7, height: 7, borderRadius: 4 },
+  stockBtnText: { color: C.sub, fontSize: 12, fontWeight: '600' },
   deleteBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -5,7 +5,8 @@ import {
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import { Plus, Upload, Search, X, Edit3, Trash2, Package } from 'lucide-react-native';
+import { Plus, Upload, Search, X, Edit3, Trash2, Package, Shield } from 'lucide-react-native';
+import { authStore } from '../../utils/authStore';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -45,6 +46,8 @@ export default function AdminScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [importing, setImporting] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
   const [temizlikCount, setTemizlikCount] = useState(0);
@@ -89,8 +92,14 @@ export default function AdminScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadProducts('');
-      loadStats();
+      authStore.init().then((admin) => {
+        setIsAdmin(admin);
+        setAuthChecked(true);
+        if (admin) {
+          loadProducts('');
+          loadStats();
+        }
+      });
     }, [])
   );
 
@@ -179,6 +188,25 @@ export default function AdminScreen() {
       ]
     );
   };
+
+  // --- Auth gate ---
+  if (!authChecked) {
+    return <View style={styles.container}><ActivityIndicator color={C.primary} style={{ marginTop: 60 }} /></View>;
+  }
+  if (!isAdmin) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.authGate}>
+          <Shield size={52} color={C.primary} />
+          <Text style={styles.authTitle}>Yönetici Girişi Gerekli</Text>
+          <Text style={styles.authSub}>Ayarlar bölümünden giriş yapın</Text>
+          <TouchableOpacity style={styles.authBtn} onPress={() => router.replace('/settings')}>
+            <Text style={styles.authBtnText}>Ayarlara Git</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const renderItem = ({ item, index }: { item: Product; index: number }) => (
     <View testID={`admin-product-${index}`} style={styles.row}>
@@ -404,4 +432,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     elevation: 8,
   },
+  authGate: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+    padding: 32,
+  },
+  authTitle: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  authSub: {
+    color: C.sub,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  authBtn: {
+    backgroundColor: C.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  authBtnText: { color: '#0A0A0A', fontSize: 15, fontWeight: '700' },
 });

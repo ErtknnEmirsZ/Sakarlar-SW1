@@ -44,6 +44,8 @@ class ProductCreate(BaseModel):
     barcode: str
     price: float
     category: str = "temizlik"          # temizlik | ambalaj | gida
+    vat_excluded_price: Optional[float] = None
+    stock_status: str = "var"           # var | az | yok
 
 
 class ProductUpdate(BaseModel):
@@ -51,6 +53,12 @@ class ProductUpdate(BaseModel):
     barcode: Optional[str] = None
     price: Optional[float] = None
     category: Optional[str] = None
+    vat_excluded_price: Optional[float] = None
+    stock_status: Optional[str] = None
+
+
+class StockUpdate(BaseModel):
+    stock_status: str  # var | az | yok
 
 
 # ─── In-memory cache ─────────────────────────────────────────────────────────
@@ -171,6 +179,14 @@ async def import_products(file: UploadFile = File(...)):
         (c for c in df.columns if any(k in c for k in ['category', 'kategori', 'cat'])),
         None
     )
+    stock_col = next(
+        (c for c in df.columns if any(k in c for k in ['stok', 'stock', 'stok_durumu'])),
+        None
+    )
+    vat_col = next(
+        (c for c in df.columns if any(k in c for k in ['kdv_haric', 'vat_excl', 'fiyat_kdvsiz', 'kdvsiz'])),
+        None
+    )
 
     if not all([name_col, barcode_col, price_col]):
         raise HTTPException(
@@ -202,6 +218,18 @@ async def import_products(file: UploadFile = File(...)):
                 'gida': 'gida', 'gıda': 'gida', 'g\u0131da': 'gida',
             }
             category = cat_map.get(raw_cat, 'diger')
+            # Stock status
+            raw_stock = str(row[stock_col]).strip().lower() if stock_col else ''
+            stock_map = {'var': 'var', 'az': 'az', 'yok': 'yok', 'yes': 'var', 'no': 'yok'}
+            stock_status = stock_map.get(raw_stock, 'var')
+            # VAT excluded price
+            vat_excluded_price = None
+            if vat_col:
+                try:
+                    vat_str = str(row[vat_col]).replace(',', '.').strip()
+                    vat_excluded_price = float(vat_str) if vat_str and vat_str != 'nan' else None
+                except Exception:
+                    vat_excluded_price = None
             # Deduplicate by barcode (keep last occurrence)
             seen_barcodes.add(barcode)
             to_insert.append({
@@ -210,6 +238,8 @@ async def import_products(file: UploadFile = File(...)):
                 "barcode": barcode,
                 "price": price,
                 "category": category,
+                "vat_excluded_price": vat_excluded_price,
+                "stock_status": stock_status,
                 "search_name": normalize_turkish(name),
                 "search_count": 0,
                 "last_searched_at": None,
@@ -285,6 +315,8 @@ async def create_product(data: ProductCreate):
         "barcode": data.barcode,
         "price": data.price,
         "category": data.category,
+        "vat_excluded_price": data.vat_excluded_price,
+        "stock_status": data.stock_status or "var",
         "search_name": normalize_turkish(data.product_name),
         "search_count": 0,
         "last_searched_at": None,
@@ -309,6 +341,27 @@ async def update_product(product_id: str, data: ProductUpdate):
     doc = await db.products.find_one({"id": product_id}, {"_id": 0})
     await invalidate_cache()
     return doc
+
+
+@api_router.put("/products/{product_id}/stock")
+async def update_stock(product_id: str, data: StockUpdate):
+    """Update only stock status (admin only endpoint)."""
+    if data.stock_status not in ('var', 'az', 'yok'):
+        raise HTTPException(status_code=400, detail="Geçersiz stok: 'var', 'az' veya 'yok' olmalı")
+    now = datetime.now(timezone.utc).isoformat()
+    result = await db.products.update_one(
+        {"id": product_id},
+        {"$set": {"stock_status": data.stock_status, "updated_at": now}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı")
+    global _products_cache
+    if _products_cache:
+        for p in _products_cache:
+            if p.get('id') == product_id:
+                p['stock_status'] = data.stock_status
+                break
+    return {"ok": True}
 
 
 @api_router.delete("/products/{product_id}")
@@ -409,13 +462,16 @@ SEED_GIDA = [
 ]
 
 
-def make_doc(name: str, barcode: str, price: float, category: str, now: str) -> dict:
+def make_doc(name: str, barcode: str, price: float, category: str, now: str,
+             vat_excluded_price: float = None, stock_status: str = "var") -> dict:
     return {
         "id": str(uuid.uuid4()),
         "product_name": name,
         "barcode": barcode,
         "price": price,
         "category": category,
+        "vat_excluded_price": vat_excluded_price,
+        "stock_status": stock_status,
         "search_name": normalize_turkish(name),
         "search_count": 0,
         "last_searched_at": None,
@@ -459,6 +515,15 @@ async def startup():
         await db.products.insert_many(docs)
         await invalidate_cache()
         logger.info(f"Migration: added {len(docs)} gıda products")
+
+    # Migration 3: add stock_status and vat_excluded_price if missing
+    if sample and 'stock_status' not in sample:
+        await db.products.update_many(
+            {"stock_status": {"$exists": False}},
+            {"$set": {"stock_status": "var", "vat_excluded_price": None}},
+        )
+        await invalidate_cache()
+        logger.info("Migrated: added stock_status and vat_excluded_price fields")
 
 
 @app.on_event("shutdown")
