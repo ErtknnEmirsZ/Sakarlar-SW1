@@ -98,7 +98,7 @@
 
 
 
-user_problem_statement: "Şakarlar SW - Internal warehouse mobile app. Fast, simple, never crashes. Features: 4 category filters (Tümü/Temizlik/Ambalaj/Gıda), Excel/CSV import (replace all products), fuzzy search with Turkish normalization, smart sorting (search_count + last_searched_at), barcode scanner with horizontal rectangle, speed mode."
+user_problem_statement: "SpecTrun SW & Şakarlar - Internal warehouse mobile app. Fast, simple, never crashes. Features: 4 category filters (Tümü/Temizlik/Ambalaj/Gıda), Excel/CSV import (SheetJS, chunked, replace all), text paste import (upsert mode), fuzzy search with Turkish normalization, smart sorting (search_count + last_searched_at), barcode scanner with horizontal rectangle, speed mode. stock_quantity (integer) system with smart color indicators."
 
 backend:
   - task: "GET /api/products with category filter and fuzzy search"
@@ -113,17 +113,17 @@ backend:
         agent: "main"
         comment: "Fully working with rapidfuzz, Turkish normalization, priority sorting"
 
-  - task: "POST /api/products/import - Excel/CSV replace all products"
+  - task: "POST /api/products/bulk - replace (Excel import) + upsert (text paste) modes"
     implemented: true
     working: true
     file: "backend/server.py"
     stuck_count: 0
     priority: "high"
-    needs_retesting: true
+    needs_retesting: false
     status_history:
       - working: true
         agent: "main"
-        comment: "Updated to DELETE ALL + INSERT approach, tracks last_import, handles diger category, deduplicates by barcode"
+        comment: "mode='replace': deletes all then inserts batches. mode='upsert': MongoDB bulk_write UpdateOne with upsert=True. Both tested via curl and UI. Verified 4 products inserted via text paste."
 
   - task: "GET /api/settings - last import date"
     implemented: true
@@ -162,7 +162,7 @@ backend:
         comment: "Working"
 
 frontend:
-  - task: "Main screen - 4 category filters + product list"
+  - task: "Main screen - FlashList + stock_quantity badges"
     implemented: true
     working: true
     file: "frontend/app/index.tsx"
@@ -172,9 +172,9 @@ frontend:
     status_history:
       - working: true
         agent: "main"
-        comment: "Screenshot confirmed: Tümü/Temizlik/Ambalaj/Gıda filters working, 55 products shown"
+        comment: "FlashList replaces FlatList for 30k+ performance. stock_quantity badges: >50 green, 10-50 yellow, 1-9 orange, 0 red Tükendi. Screenshot confirmed."
 
-  - task: "Admin screen - stats + import + product list"
+  - task: "Admin screen - Excel + Metin Yapıştır buttons + FlashList"
     implemented: true
     working: true
     file: "frontend/app/admin/index.tsx"

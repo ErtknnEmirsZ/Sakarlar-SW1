@@ -1,14 +1,15 @@
 import React, { useState, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, Alert, ActivityIndicator,
   Platform,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useRouter, useFocusEffect } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import * as XLSX from 'xlsx';
-import { Plus, Upload, Search, X, Edit3, Trash2, Package, Shield } from 'lucide-react-native';
+import { Plus, Upload, Search, X, Edit3, Trash2, Package, Shield, FileText } from 'lucide-react-native';
 import { authStore } from '../../utils/authStore';
 import { formatPrice } from '../../utils/format';
 
@@ -128,10 +129,10 @@ const parseFile = async (uri: string): Promise<any[]> => {
 // ─── Stock label helper ────────────────────────────────────────────────────────
 const stockLabel = (qty?: number) => {
   if (qty == null) return null;
-  if (qty === 0) return { text: 'Tüken', color: C.error };
-  if (qty < 10) return { text: `Az:${qty}`, color: '#F97316' };
-  if (qty <= 50) return { text: `${qty}`, color: C.warning };
-  return { text: `${qty}`, color: C.success };
+  if (qty === 0) return { text: 'Tükendi', color: C.error };
+  if (qty < 10) return { text: `Az: ${qty} adet`, color: '#F97316' };
+  if (qty <= 50) return { text: `Stok: ${qty} adet`, color: C.warning };
+  return { text: `Stok: ${qty} adet`, color: C.success };
 };
 
 
@@ -394,6 +395,7 @@ export default function AdminScreen() {
           </View>
         ) : (
           <View style={styles.importSection}>
+            {/* Row 1: Excel/CSV */}
             <TouchableOpacity
               testID="import-btn"
               style={styles.importBtn}
@@ -401,6 +403,15 @@ export default function AdminScreen() {
             >
               <Upload size={16} color="#0A0A0A" />
               <Text style={styles.importBtnText}>Excel / CSV Yükle (.xlsx, .csv)</Text>
+            </TouchableOpacity>
+            {/* Row 2: Paste text */}
+            <TouchableOpacity
+              testID="paste-btn"
+              style={styles.pasteBtn}
+              onPress={() => router.push('/admin/paste' as any)}
+            >
+              <FileText size={16} color={C.primary} />
+              <Text style={styles.pasteBtnText}>Metin Yapıştır</Text>
             </TouchableOpacity>
             {lastImport && (
               <Text style={styles.lastImportText}>Son yükleme: {formatImportDate(lastImport)}</Text>
@@ -426,14 +437,12 @@ export default function AdminScreen() {
       </View>
 
       {/* List */}
-      <FlatList
+      <FlashList
         data={products}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
+        estimatedItemSize={64}
         style={styles.list}
-        removeClippedSubviews
-        maxToRenderPerBatch={20}
-        initialNumToRender={20}
         ListEmptyComponent={
           <View style={styles.empty}>
             {loading
@@ -475,7 +484,7 @@ const styles = StyleSheet.create({
   },
   statNum: { fontSize: 20, fontWeight: '900' },
   statLabel: { color: C.sub, fontSize: 9, fontWeight: '600', marginTop: 2 },
-  importSection: { gap: 6 },
+  importSection: { gap: 8 },
   importBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -486,6 +495,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   importBtnText: { color: '#0A0A0A', fontWeight: '700', fontSize: 13 },
+  pasteBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, paddingVertical: 13, borderRadius: 10,
+    backgroundColor: C.highlight, borderWidth: 1.5, borderColor: C.primary,
+  },
+  pasteBtnText: { color: C.primary, fontWeight: '700', fontSize: 13 },
   lastImportText: { color: C.sub, fontSize: 11, textAlign: 'center' },
   progressBox: {
     backgroundColor: C.highlight,

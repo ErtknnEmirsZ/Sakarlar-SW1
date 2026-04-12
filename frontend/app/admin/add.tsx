@@ -35,7 +35,7 @@ export default function AddProductScreen() {
   const [price, setPrice] = useState('');
   const [vatPrice, setVatPrice] = useState('');
   const [category, setCategory] = useState<Category>('temizlik');
-  const [stockStatus, setStockStatus] = useState<'var' | 'az' | 'yok'>('var');
+  const [stockQuantity, setStockQuantity] = useState('0');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -58,7 +58,7 @@ export default function AddProductScreen() {
           setBarcode(p.barcode || '');
           setPrice(String(p.price ?? '').replace('.', ','));
           setVatPrice(p.vat_excluded_price ? String(p.vat_excluded_price).replace('.', ',') : '');
-          setStockStatus((p.stock_status as any) || 'var');
+          setStockQuantity(String(p.stock_quantity ?? 0));
           const cat = p.category;
           if (cat === 'ambalaj') setCategory('ambalaj');
           else if (cat === 'gida') setCategory('gida');
@@ -92,12 +92,13 @@ export default function AddProductScreen() {
     setSaving(true);
     try {
       const vatNum = vatPrice.trim() ? parseFloat(vatPrice.replace(',', '.')) : null;
+      const stockQty = Math.max(0, parseInt(stockQuantity.replace(',', '.').trim(), 10) || 0);
       const body = {
         product_name: trimName,
         barcode: trimBarcode,
         price: priceNum,
         category,
-        stock_status: stockStatus,
+        stock_quantity: stockQty,
         vat_excluded_price: vatNum && !isNaN(vatNum) ? vatNum : null,
       };
       const url = isEdit ? `${BACKEND_URL}/api/products/${productId}` : `${BACKEND_URL}/api/products`;
@@ -256,25 +257,18 @@ export default function AddProductScreen() {
             />
           </View>
 
-          {/* Stock Status */}
+          {/* Stock Quantity */}
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>STOK DURUMU</Text>
-            <View style={styles.stockRow}>
-              {([ ['var', 'Stokta Var', '#22C55E'], ['az', 'Az Kaldı', '#FBBF24'], ['yok', 'Tükendi', '#EF4444'] ] as const).map(([key, label, color]) => (
-                <TouchableOpacity
-                  key={key}
-                  testID={`stock-${key}`}
-                  style={[
-                    styles.stockBtn,
-                    stockStatus === key && { backgroundColor: color + '22', borderColor: color },
-                  ]}
-                  onPress={() => setStockStatus(key)}
-                >
-                  <View style={[styles.stockDot, { backgroundColor: stockStatus === key ? color : C.border }]} />
-                  <Text style={[styles.stockBtnText, stockStatus === key && { color }]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <Text style={styles.fieldLabel}>STOK MİKTARI (ADET)</Text>
+            <TextInput
+              testID="stock-quantity-input"
+              style={styles.input}
+              value={stockQuantity}
+              onChangeText={(v) => setStockQuantity(v.replace(/[^0-9]/g, ''))}
+              placeholder="0"
+              placeholderTextColor={C.sub}
+              keyboardType="number-pad"
+            />
           </View>
 
           {/* Save Button */}
@@ -374,21 +368,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveBtnText: { color: '#0A0A0A', fontSize: 17, fontWeight: '800' },
-  stockRow: { flexDirection: 'row', gap: 8 },
-  stockBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 5,
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    backgroundColor: C.surface,
-  },
-  stockDot: { width: 7, height: 7, borderRadius: 4 },
-  stockBtnText: { color: C.sub, fontSize: 12, fontWeight: '600' },
   deleteBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',

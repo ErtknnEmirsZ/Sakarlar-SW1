@@ -27,7 +27,7 @@ interface Product {
   barcode: string;
   price: number;
   category: string;
-  stock_status?: string;
+  stock_quantity?: number | null;
   vat_excluded_price?: number | null;
 }
 
@@ -72,10 +72,17 @@ export default function ProductDetail() {
     product.category === 'ambalaj' ? 'Ambalaj' :
     product.category === 'gida' ? 'Gıda' : 'Temizlik';
 
-  const stockColor = product.stock_status === 'yok' ? '#EF4444' :
-                     product.stock_status === 'az' ? '#FBBF24' : '#22C55E';
-  const stockLabel = product.stock_status === 'yok' ? 'Stokta Yok' :
-                     product.stock_status === 'az' ? 'Az Kaldı' : 'Stokta Var';
+  const qty = product.stock_quantity;
+  const stockColor =
+    qty == null ? '#9A9A9A' :
+    qty === 0 ? '#EF4444' :
+    qty < 10 ? '#F97316' :
+    qty <= 50 ? '#FBBF24' : '#22C55E';
+  const stockLabel =
+    qty == null ? 'Bilinmiyor' :
+    qty === 0 ? 'Tükendi • 0 adet' :
+    qty < 10 ? `Az Kaldı • ${qty} adet` :
+    `Stok: ${qty} adet`;
 
   return (
     <SafeAreaView style={styles.container} testID="product-detail">

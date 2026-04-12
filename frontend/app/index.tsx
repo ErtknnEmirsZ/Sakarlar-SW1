@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity,
+  View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator, Platform,
   KeyboardAvoidingView,
 } from 'react-native';
+import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Search, X, Zap, Camera, Settings, Package } from 'lucide-react-native';
@@ -44,10 +45,19 @@ interface Product {
   barcode: string;
   price: number;
   category: string;
-  stock_quantity?: number;
+  stock_quantity?: number | null;
   vat_excluded_price?: number | null;
   search_count?: number;
 }
+
+// Returns label + color for stock badge
+const getStockBadge = (qty?: number | null): { text: string; color: string } | null => {
+  if (qty == null) return null;
+  if (qty === 0) return { text: 'Tükendi', color: '#EF4444' };
+  if (qty < 10)  return { text: `Az: ${qty} adet`, color: '#F97316' };
+  if (qty <= 50) return { text: `Stok: ${qty} adet`, color: '#FBBF24' };
+  return { text: `Stok: ${qty} adet`, color: '#22C55E' };
+};
 
 const getCatLabel = (cat: string) => {
   if (cat === 'ambalaj') return 'Ambalaj';
@@ -120,61 +130,52 @@ export default function MainScreen() {
     return C.primary;
   };
 
-  const renderItem = useCallback(({ item, index }: { item: Product; index: number }) => (
-    <TouchableOpacity
-      testID={`product-item-${index}`}
-      style={styles.row}
-      onPress={() => router.push(`/product/${item.id}`)}
-      activeOpacity={0.55}
-    >
-      {/* Category color stripe */}
-      <View style={[styles.catStripe, getCatBadgeStyle(item.category)]} />
+  const renderItem = useCallback(({ item, index }: { item: Product; index: number }) => {
+    const stockBadge = getStockBadge(item.stock_quantity);
+    return (
+      <TouchableOpacity
+        testID={`product-item-${index}`}
+        style={styles.row}
+        onPress={() => router.push(`/product/${item.id}`)}
+        activeOpacity={0.55}
+      >
+        {/* Category color stripe */}
+        <View style={[styles.catStripe, getCatBadgeStyle(item.category)]} />
 
-      <View style={styles.rowMain}>
-        <View style={styles.rowLeft}>
-          {/* Name row */}
-          <View style={styles.nameRow}>
-            {(item.search_count ?? 0) >= 3 && (
-              <Text style={styles.popBadge}>🔥</Text>
-            )}
-            <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
-          </View>
-          {/* Badges row */}
-          <View style={styles.badgesRow}>
-            <View style={[styles.catBadge, getCatBadgeStyle(item.category)]}>
-              <Text style={[styles.catBadgeText, getCatTextStyle(item.category)]}>
-                {getCatLabel(item.category)}
-              </Text>
+        <View style={styles.rowMain}>
+          <View style={styles.rowLeft}>
+            {/* Name row */}
+            <View style={styles.nameRow}>
+              {(item.search_count ?? 0) >= 3 && (
+                <Text style={styles.popBadge}>🔥</Text>
+              )}
+              <Text style={styles.rowName} numberOfLines={2}>{item.product_name}</Text>
             </View>
-            {item.stock_status === 'yok' && (
-              <View style={[styles.stockBadge, styles.stockBadgeYok]}>
-                <Text style={styles.stockTextYok}>Tüken</Text>
+            {/* Badges row */}
+            <View style={styles.badgesRow}>
+              <View style={[styles.catBadge, getCatBadgeStyle(item.category)]}>
+                <Text style={[styles.catBadgeText, getCatTextStyle(item.category)]}>
+                  {getCatLabel(item.category)}
+                </Text>
               </View>
-            )}
-            {item.stock_status === 'az' && (
-              <View style={[styles.stockBadge, styles.stockBadgeAz]}>
-                <Text style={styles.stockTextAz}>Az Kaldı</Text>
-              </View>
-            )}
+              {stockBadge && (
+                <View style={[styles.stockBadge, { backgroundColor: stockBadge.color + '20' }]}>
+                  <Text style={[styles.stockBadgeText, { color: stockBadge.color }]}>
+                    {stockBadge.text}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Price */}
+          <View style={styles.priceCol}>
+            <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
           </View>
         </View>
-
-        {/* Price */}
-        <View style={styles.priceCol}>
-          <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
-          {item.stock_status === 'yok' && (
-            <Text style={styles.outOfStockSmall}>Stokta Yok</Text>
-          )}
-        </View>
-      </View>
-    </TouchableOpacity>
-  ), [router]);
-
-  const getItemLayout = useCallback((_: unknown, index: number) => ({
-    length: ITEM_HEIGHT,
-    offset: ITEM_HEIGHT * index,
-    index,
-  }), []);
+      </TouchableOpacity>
+    );
+  }, [router]);
 
   return (
     <KeyboardAvoidingView
@@ -240,17 +241,13 @@ export default function MainScreen() {
         </View>
 
         {/* Product List */}
-        <FlatList
+        <FlashList
           data={products}
           keyExtractor={(item) => item.id}
           renderItem={renderItem}
-          getItemLayout={getItemLayout}
+          estimatedItemSize={ITEM_HEIGHT}
           style={styles.list}
           keyboardShouldPersistTaps="handled"
-          removeClippedSubviews
-          maxToRenderPerBatch={20}
-          initialNumToRender={20}
-          windowSize={10}
           ListEmptyComponent={
             <View style={styles.empty}>
               {loading ? (
@@ -485,22 +482,14 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 5,
   },
-  stockBadgeAz: { backgroundColor: 'rgba(251,191,36,0.15)' },
-  stockBadgeYok: { backgroundColor: 'rgba(239,68,68,0.15)' },
-  stockTextAz: { color: '#FBBF24', fontSize: 9, fontWeight: '700' },
-  stockTextYok: { color: '#EF4444', fontSize: 9, fontWeight: '700' },
+  stockBadgeText: { fontSize: 9, fontWeight: '700' },
 
-  priceCol: { alignItems: 'flex-end', gap: 2 },
+  priceCol: { alignItems: 'flex-end' },
   rowPrice: {
     color: C.primary,
     fontSize: 20,
     fontWeight: '900',
     letterSpacing: -0.5,
-  },
-  outOfStockSmall: {
-    color: C.danger,
-    fontSize: 9,
-    fontWeight: '600',
   },
 
   // Empty state

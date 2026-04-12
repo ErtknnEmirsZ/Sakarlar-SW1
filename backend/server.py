@@ -2,6 +2,7 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import UpdateOne
 import os
 import logging
 import uuid
@@ -65,6 +66,7 @@ class BulkImportRequest(BaseModel):
     products: List[ImportProduct]
     is_first_batch: bool = True   # First batch: delete all existing products first
     is_last_batch: bool = True    # Last batch: update last_import timestamp
+    mode: str = "replace"         # "replace" | "upsert"
 
 
 # ─── In-memory cache ───────────────────────────────────────────────────────────────
@@ -148,45 +150,88 @@ async def get_products(q: Optional[str] = None, category: Optional[str] = None):
 
 @api_router.post("/products/bulk")
 async def bulk_import_products(data: BulkImportRequest):
-    """Bulk import: frontend parses Excel/CSV and sends JSON batches.
-    First batch deletes all existing products.
-    Last batch updates last_import timestamp and rebuilds cache.
+    """Bulk import: frontend parses Excel/CSV or text and sends JSON batches.
+    mode='replace': First batch deletes all existing products. Last batch updates timestamp.
+    mode='upsert':  Preserves existing products. Adds new / updates by barcode.
     """
     now = datetime.now(timezone.utc).isoformat()
 
-    if data.is_first_batch:
-        await db.products.delete_many({})
+    if data.mode == "upsert":
+        # Upsert by barcode: update if exists, insert if not — preserves all other products
+        if data.products:
+            ops = []
+            for p in data.products:
+                ops.append(UpdateOne(
+                    {"barcode": p.barcode},
+                    {
+                        "$set": {
+                            "product_name": p.product_name,
+                            "price": p.price,
+                            "category": p.category,
+                            "stock_quantity": p.stock_quantity,
+                            "vat_excluded_price": p.vat_excluded_price,
+                            "search_name": normalize_turkish(p.product_name),
+                            "updated_at": now,
+                        },
+                        "$setOnInsert": {
+                            "id": str(uuid.uuid4()),
+                            "barcode": p.barcode,
+                            "search_count": 0,
+                            "last_searched_at": None,
+                            "created_at": now,
+                        },
+                    },
+                    upsert=True,
+                ))
+            await db.products.bulk_write(ops)
 
-    if data.products:
-        docs = []
-        for p in data.products:
-            docs.append({
-                "id": str(uuid.uuid4()),
-                "product_name": p.product_name,
-                "barcode": p.barcode,
-                "price": p.price,
-                "category": p.category,
-                "stock_quantity": p.stock_quantity,
-                "vat_excluded_price": p.vat_excluded_price,
-                "search_name": normalize_turkish(p.product_name),
-                "search_count": 0,
-                "last_searched_at": None,
-                "created_at": now,
-                "updated_at": now,
-            })
-        await db.products.insert_many(docs)
+        last_import = None
+        if data.is_last_batch:
+            last_import = now
+            await db.settings.update_one(
+                {"key": "last_import"},
+                {"$set": {"value": now}},
+                upsert=True,
+            )
+            await invalidate_cache()
 
-    last_import = None
-    if data.is_last_batch:
-        last_import = now
-        await db.settings.update_one(
-            {"key": "last_import"},
-            {"$set": {"value": now}},
-            upsert=True,
-        )
-        await invalidate_cache()
+        return {"ok": True, "upserted": len(data.products), "last_import": last_import}
 
-    return {"ok": True, "inserted": len(data.products), "last_import": last_import}
+    else:
+        # Replace mode (original behavior)
+        if data.is_first_batch:
+            await db.products.delete_many({})
+
+        if data.products:
+            docs = []
+            for p in data.products:
+                docs.append({
+                    "id": str(uuid.uuid4()),
+                    "product_name": p.product_name,
+                    "barcode": p.barcode,
+                    "price": p.price,
+                    "category": p.category,
+                    "stock_quantity": p.stock_quantity,
+                    "vat_excluded_price": p.vat_excluded_price,
+                    "search_name": normalize_turkish(p.product_name),
+                    "search_count": 0,
+                    "last_searched_at": None,
+                    "created_at": now,
+                    "updated_at": now,
+                })
+            await db.products.insert_many(docs)
+
+        last_import = None
+        if data.is_last_batch:
+            last_import = now
+            await db.settings.update_one(
+                {"key": "last_import"},
+                {"$set": {"value": now}},
+                upsert=True,
+            )
+            await invalidate_cache()
+
+        return {"ok": True, "inserted": len(data.products), "last_import": last_import}
 
 
 @api_router.get("/products/barcode/{barcode}")
