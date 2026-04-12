@@ -11,8 +11,7 @@ import { Search, X, Zap, Camera, Settings, Package, ShoppingCart } from 'lucide-
 import { formatPrice } from '../utils/format';
 import { useCartStore } from '../utils/cartStore';
 
-// Web'de localhost:8001'e doğrudan bağlan (Playwright/web preview), mobile'da ngrok URL kullan
-const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8001' : process.env.EXPO_PUBLIC_BACKEND_URL;
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
   bg: '#0F0F0F',
@@ -90,8 +89,10 @@ export default function MainScreen() {
   const [category, setCategory] = useState<CategoryKey>('all');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
-  const cartItems = useCartStore(state => state.items);
-  const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
+  // Sepet sayısını tek selector'da hesapla
+  const cartCount = useCartStore(state =>
+    state.items.reduce((s: number, i: { quantity: number }) => s + i.quantity, 0)
+  );
 
   const fetchProducts = useCallback(async (q: string, cat: CategoryKey) => {
     try {
@@ -99,24 +100,15 @@ export default function MainScreen() {
       if (q.trim()) params.set('q', q.trim());
       if (cat !== 'all') params.set('category', cat);
       const url = `${BACKEND_URL}/api/products${params.toString() ? '?' + params.toString() : ''}`;
-      console.log('[FETCH] URL:', url);
       const res = await fetch(url);
-      console.log('[FETCH] Status:', res.status);
       if (!res.ok) return;
       const data = await res.json();
-      console.log('[FETCH] Count:', Array.isArray(data) ? data.length : 'not-array');
       setProducts(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.error('[FETCH] Error:', e);
       setProducts([]);
     } finally {
       setLoading(false);
-      console.log('[FETCH] Loading set to false');
     }
-  }, []);
-
-  useEffect(() => {
-    fetchProducts('', 'all');
   }, []);
 
   useEffect(() => {
@@ -126,7 +118,8 @@ export default function MainScreen() {
       fetchProducts(query, category);
     }, 150);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
-  }, [query, category, fetchProducts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, category]);
 
   const handleCategoryChange = (cat: CategoryKey) => {
     setCategory(cat);
