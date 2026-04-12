@@ -39,11 +39,12 @@ class ProductCreate(BaseModel):
     product_name: str
     barcode: str
     price: float
-    category: str = "temizlik"          # temizlik | ambalaj | gida | diger
+    category: str = "temizlik"
     vat_excluded_price: Optional[float] = None
     stock_quantity: int = 0
-    quantity_type: str = "adet"         # adet | kutu | paket | koli
+    quantity_type: str = "adet"         # adet | kutu | paket | koli | kg
     box_quantity: int = 1               # units per box (1 = single unit)
+    is_weight_based: bool = False       # True = price per 1 kg
 
 
 class ProductUpdate(BaseModel):
@@ -55,6 +56,7 @@ class ProductUpdate(BaseModel):
     stock_quantity: Optional[int] = None
     quantity_type: Optional[str] = None
     box_quantity: Optional[int] = None
+    is_weight_based: Optional[bool] = None
 
 
 class ImportProduct(BaseModel):
@@ -64,8 +66,9 @@ class ImportProduct(BaseModel):
     category: str = "diger"
     stock_quantity: int = 0
     vat_excluded_price: Optional[float] = None
-    quantity_type: str = "adet"         # adet | kutu | paket | koli
-    box_quantity: int = 1               # units per box
+    quantity_type: str = "adet"
+    box_quantity: int = 1
+    is_weight_based: bool = False
 
 
 class BulkImportRequest(BaseModel):
@@ -178,6 +181,7 @@ async def bulk_import_products(data: BulkImportRequest):
                             "vat_excluded_price": p.vat_excluded_price,
                             "quantity_type": p.quantity_type,
                             "box_quantity": p.box_quantity,
+                            "is_weight_based": p.is_weight_based,
                             "search_name": normalize_turkish(p.product_name),
                             "updated_at": now,
                         },
@@ -223,6 +227,7 @@ async def bulk_import_products(data: BulkImportRequest):
                     "vat_excluded_price": p.vat_excluded_price,
                     "quantity_type": p.quantity_type,
                     "box_quantity": p.box_quantity,
+                    "is_weight_based": p.is_weight_based,
                     "search_name": normalize_turkish(p.product_name),
                     "search_count": 0,
                     "last_searched_at": None,
