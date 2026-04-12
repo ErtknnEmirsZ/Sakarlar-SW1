@@ -99,15 +99,19 @@ export default function MainScreen() {
       if (q.trim()) params.set('q', q.trim());
       if (cat !== 'all') params.set('category', cat);
       const url = `${BACKEND_URL}/api/products${params.toString() ? '?' + params.toString() : ''}`;
+      console.log('[FETCH] URL:', url);
       const res = await fetch(url);
+      console.log('[FETCH] Status:', res.status);
       if (!res.ok) return;
       const data = await res.json();
+      console.log('[FETCH] Count:', Array.isArray(data) ? data.length : 'not-array');
       setProducts(Array.isArray(data) ? data : []);
     } catch (e) {
-      console.error('Fetch error:', e);
+      console.error('[FETCH] Error:', e);
       setProducts([]);
     } finally {
       setLoading(false);
+      console.log('[FETCH] Loading set to false');
     }
   }, []);
 
