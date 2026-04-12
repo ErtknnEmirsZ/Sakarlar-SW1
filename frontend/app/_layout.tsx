@@ -23,6 +23,10 @@ export default function RootLayout() {
         <Stack.Screen name="admin/index" options={{ title: 'Yönetim Paneli' }} />
         <Stack.Screen name="admin/add" options={{ title: 'Ürün Ekle/Düzenle' }} />
         <Stack.Screen name="settings" options={{ title: 'Ayarlar' }} />
+        <Stack.Screen
+          name="cart"
+          options={{ title: 'Sepet', presentation: 'modal', headerShown: false }}
+        />
       </Stack>
     </>
   );

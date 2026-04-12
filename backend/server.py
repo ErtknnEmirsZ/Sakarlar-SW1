@@ -148,12 +148,13 @@ async def increment_product_count(product_id: str):
 
 # ─── Routes ────────────────────────────────────────────────────────────────────────────────────
 @api_router.get("/products")
-async def get_products(q: Optional[str] = None, category: Optional[str] = None):
+async def get_products(q: Optional[str] = None, category: Optional[str] = None, limit: int = 200):
     products = await get_cached_products()
     if category and category not in ('all', 'tumu', ''):
         products = [p for p in products if p.get('category', '') == category]
     if not q or not q.strip():
-        return sort_by_priority([(p, 0) for p in products])
+        sorted_all = sort_by_priority([(p, 0) for p in products])
+        return sorted_all[:limit]
     return fuzzy_search(products, q.strip())
 
 

@@ -7,8 +7,9 @@ import {
 import { FlashList } from '@shopify/flash-list';
 import { useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Search, X, Zap, Camera, Settings, Package } from 'lucide-react-native';
+import { Search, X, Zap, Camera, Settings, Package, ShoppingCart } from 'lucide-react-native';
 import { formatPrice } from '../utils/format';
+import { useCartStore } from '../utils/cartStore';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 
@@ -88,6 +89,8 @@ export default function MainScreen() {
   const [category, setCategory] = useState<CategoryKey>('all');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
+  const cartItems = useCartStore(state => state.items);
+  const cartCount = cartItems.reduce((s, i) => s + i.quantity, 0);
 
   const fetchProducts = useCallback(async (q: string, cat: CategoryKey) => {
     try {
@@ -214,13 +217,31 @@ export default function MainScreen() {
                 <Text style={styles.headerSubTitle}>& Şakarlar</Text>
               </View>
             </View>
-            <TouchableOpacity
-              testID="settings-button"
-              style={styles.headerBtn}
-              onPress={() => router.push('/settings')}
-            >
-              <Settings size={20} color={C.sub} />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              {/* Sepet butonu */}
+              <TouchableOpacity
+                testID="cart-button"
+                style={styles.headerBtn}
+                onPress={() => router.push('/cart')}
+              >
+                <ShoppingCart size={20} color={cartCount > 0 ? C.primary : C.sub} />
+                {cartCount > 0 && (
+                  <View style={styles.cartBadge}>
+                    <Text style={styles.cartBadgeText}>
+                      {cartCount > 99 ? '99+' : Math.round(cartCount)}
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="settings-button"
+                style={styles.headerBtn}
+                onPress={() => router.push('/settings')}
+              >
+                <Settings size={20} color={C.sub} />
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -392,6 +413,28 @@ const styles = StyleSheet.create({
     backgroundColor: C.highlight,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cartBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: C.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  cartBadgeText: {
+    color: '#0A0A0A',
+    fontSize: 9,
+    fontWeight: '900',
   },
 
   // Category Bar

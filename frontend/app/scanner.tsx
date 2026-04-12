@@ -6,8 +6,9 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { X, Zap, AlertCircle, CheckCircle } from 'lucide-react-native';
+import { X, Zap, AlertCircle, CheckCircle, ShoppingCart } from 'lucide-react-native';
 import { formatPrice } from '../utils/format';
+import { useCartStore, CartProduct } from '../utils/cartStore';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
 const { width: SW, height: SH } = Dimensions.get('window');
@@ -31,7 +32,17 @@ const C = {
 
 interface ScanResult {
   type: 'found' | 'not_found';
-  product?: { id: string; product_name: string; price: number; category?: string };
+  product?: {
+    id: string;
+    product_name: string;
+    price: number;
+    category?: string;
+    barcode?: string;
+    quantity_type?: string;
+    box_quantity?: number;
+    is_weight_based?: boolean;
+    stock_quantity?: number | null;
+  };
   barcode?: string;
 }
 
@@ -41,11 +52,14 @@ export default function ScannerScreen() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
   const [scanKey, setScanKey] = useState(0);  // Force camera remount on each scan reset
+  const [cartAdded, setCartAdded] = useState(false);
   const cooldown = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scanLineAnim = useRef(new Animated.Value(0)).current;
   const router = useRouter();
   const { speedMode, mode } = useLocalSearchParams<{ speedMode?: string; mode?: string }>();
+  const { addItem, items } = useCartStore();
+  const cartCount = items.reduce((s, i) => s + i.quantity, 0);
 
   const isSpeedMode = speedMode === '1';
   const isSelectMode = mode === 'select';
@@ -124,11 +138,24 @@ export default function ScannerScreen() {
           return;
         }
 
-        // Speed mode: full screen → auto-return after 2s, with camera remount
+        // Speed mode: sepete otomatik ekle + 2s sonra kamera sıfırla
         if (isSpeedMode) {
+          const cartProduct: CartProduct = {
+            id: product.id,
+            product_name: product.product_name,
+            barcode: product.barcode || data,
+            price: product.price,
+            category: product.category || 'diger',
+            quantity_type: product.quantity_type,
+            box_quantity: product.box_quantity,
+            is_weight_based: product.is_weight_based,
+            stock_quantity: product.stock_quantity,
+          };
+          addItem(cartProduct, 1);
+          setCartAdded(true);
           resetScanner(2000);
         }
-        // Normal mode: user manually dismisses
+        // Normal mode: kullanıcı kart üzerinden işlem yapar
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
         showResult({ type: 'not_found', barcode: data });
@@ -261,6 +288,13 @@ export default function ScannerScreen() {
             {result.product.product_name}
           </Text>
           <Text style={styles.fullPrice}>{formatPrice(result.product.price)}</Text>
+          {/* Sepete eklendiğini göster */}
+          <View style={styles.addedBadge}>
+            <ShoppingCart size={16} color="#0A0A0A" />
+            <Text style={styles.addedBadgeText}>
+              Sepete Eklendi • {Math.round(cartCount)} kalem
+            </Text>
+          </View>
         </Animated.View>
       )}
 
@@ -291,6 +325,33 @@ export default function ScannerScreen() {
               <Text style={styles.resultPrice}>{formatPrice(result.product.price)}</Text>
               {!isSelectMode && (
                 <View style={styles.resultActions}>
+                  {/* Sepete Ekle */}
+                  <TouchableOpacity
+                    style={styles.addToCartBtn}
+                    onPress={() => {
+                      const p = result.product!;
+                      const cartProduct: CartProduct = {
+                        id: p.id,
+                        product_name: p.product_name,
+                        barcode: p.barcode || result.barcode || '',
+                        price: p.price,
+                        category: p.category || 'diger',
+                        quantity_type: p.quantity_type,
+                        box_quantity: p.box_quantity,
+                        is_weight_based: p.is_weight_based,
+                        stock_quantity: p.stock_quantity,
+                      };
+                      addItem(cartProduct, 1);
+                      setCartAdded(true);
+                      setTimeout(() => setCartAdded(false), 1500);
+                    }}
+                  >
+                    <ShoppingCart size={15} color="#0A0A0A" />
+                    <Text style={styles.addToCartText}>
+                      {cartAdded ? '✓ Eklendi' : 'Sepete Ekle'}
+                    </Text>
+                  </TouchableOpacity>
+
                   <TouchableOpacity
                     testID="view-detail-btn"
                     style={styles.detailBtn}
@@ -303,6 +364,7 @@ export default function ScannerScreen() {
                     style={styles.scanAgainBtn}
                     onPress={() => {
                       setResult(null);
+                      setCartAdded(false);
                       cooldown.current = false;
                       setScanning(true);
                     }}
@@ -481,6 +543,14 @@ const styles = StyleSheet.create({
     color: '#0A0A0A', fontSize: 80, fontWeight: '900',
     letterSpacing: -3, textAlign: 'center',
   },
+  addedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#22C55E', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 20,
+  },
+  addedBadgeText: {
+    color: '#0A0A0A', fontSize: 13, fontWeight: '800',
+  },
   fullScreenError: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#1C1C1C',
@@ -505,7 +575,13 @@ const styles = StyleSheet.create({
   resultPrice: {
     color: C.primary, fontSize: 58, fontWeight: '900', letterSpacing: -2,
   },
-  resultActions: { flexDirection: 'row', gap: 12, marginTop: 6 },
+  resultActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 6, justifyContent: 'center' },
+  addToCartBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: 13, paddingHorizontal: 18, borderRadius: 10,
+    backgroundColor: C.primary,
+  },
+  addToCartText: { color: '#0A0A0A', fontWeight: '800', fontSize: 14 },
   detailBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 10,
     backgroundColor: C.highlight, alignItems: 'center',
@@ -513,9 +589,9 @@ const styles = StyleSheet.create({
   detailBtnText: { color: C.text, fontWeight: '600', fontSize: 15 },
   scanAgainBtn: {
     flex: 1, paddingVertical: 14, borderRadius: 10,
-    backgroundColor: C.primary, alignItems: 'center',
+    backgroundColor: C.highlight, alignItems: 'center',
   },
-  scanAgainText: { color: '#0A0A0A', fontWeight: '800', fontSize: 15 },
+  scanAgainText: { color: C.text, fontWeight: '600', fontSize: 15 },
   notFoundText: { color: C.error, fontSize: 22, fontWeight: '800' },
   notFoundBarcode: { color: C.sub, fontSize: 14, letterSpacing: 1 },
 });
