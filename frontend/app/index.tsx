@@ -44,7 +44,7 @@ interface Product {
   barcode: string;
   price: number;
   category: string;
-  stock_status?: string;
+  stock_quantity?: number;
   vat_excluded_price?: number | null;
   search_count?: number;
 }
