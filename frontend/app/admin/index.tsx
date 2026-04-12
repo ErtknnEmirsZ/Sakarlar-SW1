@@ -159,8 +159,10 @@ export default function AdminScreen() {
       const url = q.trim()
         ? `${BACKEND_URL}/api/products?q=${encodeURIComponent(q)}`
         : `${BACKEND_URL}/api/products`;
-      const data = await (await fetch(url)).json();
-      setProducts(Array.isArray(data) ? data : []);
+      const raw = await (await fetch(url)).json();
+      // Yeni format: {data: [...], total, has_more} veya eski format: [...]
+      const data = Array.isArray(raw) ? raw : (raw.data ?? []);
+      setProducts(data);
     } catch { setProducts([]); }
     finally { setLoading(false); }
   }, []);

@@ -85,6 +85,10 @@ export default function MainScreen() {
   const [query, setQuery] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
   const [speedMode, setSpeedMode] = useState(false);
   const [category, setCategory] = useState<CategoryKey>('all');
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -94,32 +98,59 @@ export default function MainScreen() {
     state.items.reduce((s: number, i: { quantity: number }) => s + i.quantity, 0)
   );
 
-  const fetchProducts = useCallback(async (q: string, cat: CategoryKey) => {
+  const fetchProducts = useCallback(async (
+    q: string,
+    cat: CategoryKey,
+    pageNum: number = 1,
+    append: boolean = false,
+  ) => {
+    if (append) setLoadingMore(true);
+    else setLoading(true);
     try {
-      const params = new URLSearchParams();
+      const params = new URLSearchParams({ page: String(pageNum), limit: '200' });
       if (q.trim()) params.set('q', q.trim());
       if (cat !== 'all') params.set('category', cat);
-      const url = `${BACKEND_URL}/api/products${params.toString() ? '?' + params.toString() : ''}`;
+      const url = `${BACKEND_URL}/api/products?${params.toString()}`;
       const res = await fetch(url);
       if (!res.ok) return;
-      const data = await res.json();
-      setProducts(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setProducts([]);
+      const result = await res.json();
+      // Yeni sayfalama formatı: {data, total, page, has_more}
+      const data: Product[] = Array.isArray(result) ? result : (result.data ?? []);
+      const more: boolean = result.has_more ?? false;
+      const total: number = result.total ?? data.length;
+      if (append) {
+        setProducts(prev => [...prev, ...data]);
+      } else {
+        setProducts(data);
+      }
+      setHasMore(more);
+      setPage(pageNum);
+      setTotalCount(total);
+    } catch {
+      if (!append) setProducts([]);
     } finally {
-      setLoading(false);
+      if (append) setLoadingMore(false);
+      else setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
     setLoading(true);
+    setPage(1);
+    setHasMore(true);
     searchTimer.current = setTimeout(() => {
-      fetchProducts(query, category);
+      fetchProducts(query, category, 1, false);
     }, 150);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, category]);
+
+  // Infinite scroll: sonraki sayfayı yükle
+  const handleLoadMore = useCallback(() => {
+    if (loadingMore || loading || !hasMore) return;
+    fetchProducts(query, category, page + 1, true);
+  }, [loadingMore, loading, hasMore, page, query, category, fetchProducts]);
 
   const handleCategoryChange = (cat: CategoryKey) => {
     setCategory(cat);
@@ -284,6 +315,30 @@ export default function MainScreen() {
           estimatedItemSize={ITEM_HEIGHT}
           style={styles.list}
           keyboardShouldPersistTaps="handled"
+          onEndReachedThreshold={0.4}
+          onEndReached={handleLoadMore}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={styles.loadMoreIndicator}>
+                <ActivityIndicator color={C.primary} size="small" />
+                <Text style={styles.loadMoreText}>
+                  {products.length} / {totalCount} ürün
+                </Text>
+              </View>
+            ) : hasMore && products.length > 0 ? (
+              <View style={styles.loadMoreIndicator}>
+                <Text style={styles.loadMoreText}>
+                  {products.length} / {totalCount} ürün yüklendi
+                </Text>
+              </View>
+            ) : products.length > 0 ? (
+              <View style={styles.loadMoreIndicator}>
+                <Text style={styles.loadMoreTextDone}>
+                  ✓ Tüm {totalCount} ürün yüklendi
+                </Text>
+              </View>
+            ) : null
+          }
           ListEmptyComponent={
             <View style={styles.empty}>
               {loading ? (
@@ -433,6 +488,22 @@ const styles = StyleSheet.create({
     color: '#0A0A0A',
     fontSize: 9,
     fontWeight: '900',
+  },
+  // ── Infinite scroll footer ─────────────────────────────────
+  loadMoreIndicator: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    gap: 6,
+  },
+  loadMoreText: {
+    color: C.sub,
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  loadMoreTextDone: {
+    color: C.primary,
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   // Category Bar

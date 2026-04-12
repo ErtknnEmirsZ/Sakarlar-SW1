@@ -127,7 +127,7 @@ def fuzzy_search(products: List[dict], query: str, threshold: int = 35) -> List[
         )
         if score >= threshold:
             results.append((p, score))
-    return sort_by_priority(results)[:80]
+    return sort_by_priority(results)[:200]
 
 
 # ─── Search count helper ───────────────────────────────────────────────────────────────
@@ -148,14 +148,42 @@ async def increment_product_count(product_id: str):
 
 # ─── Routes ────────────────────────────────────────────────────────────────────────────────────
 @api_router.get("/products")
-async def get_products(q: Optional[str] = None, category: Optional[str] = None, limit: int = 200):
+async def get_products(
+    q: Optional[str] = None,
+    category: Optional[str] = None,
+    page: int = 1,
+    limit: int = 200,
+):
     products = await get_cached_products()
+
+    # Category filter
     if category and category not in ('all', 'tumu', ''):
         products = [p for p in products if p.get('category', '') == category]
-    if not q or not q.strip():
-        sorted_all = sort_by_priority([(p, 0) for p in products])
-        return sorted_all[:limit]
-    return fuzzy_search(products, q.strip())
+
+    # Search mode → full fuzzy search across all products, paginated
+    if q and q.strip():
+        results = fuzzy_search(products, q.strip())
+        total = len(results)
+        offset = (page - 1) * limit
+        page_data = results[offset:offset + limit]
+        return {
+            "data": page_data,
+            "total": total,
+            "page": page,
+            "has_more": offset + limit < total,
+        }
+
+    # Browse mode → priority-sorted, paginated
+    sorted_all = sort_by_priority([(p, 0) for p in products])
+    total = len(sorted_all)
+    offset = (page - 1) * limit
+    page_data = sorted_all[offset:offset + limit]
+    return {
+        "data": page_data,
+        "total": total,
+        "page": page,
+        "has_more": offset + limit < total,
+    }
 
 
 @api_router.post("/products/bulk")
