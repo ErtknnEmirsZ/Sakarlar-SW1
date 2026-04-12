@@ -9,7 +9,9 @@ import { ShoppingCart, Scale, Package, ArrowLeft, Plus, Minus } from 'lucide-rea
 import { formatPrice } from '../../utils/format';
 import { useCartStore } from '../../utils/cartStore';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+import { Platform } from 'react-native';
+
+const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8001' : process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
   bg: '#0F0F0F', surface: '#1C1C1C', highlight: '#2A2A2A',

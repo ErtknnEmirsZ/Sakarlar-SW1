@@ -11,7 +11,8 @@ import { Search, X, Zap, Camera, Settings, Package, ShoppingCart } from 'lucide-
 import { formatPrice } from '../utils/format';
 import { useCartStore } from '../utils/cartStore';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL;
+// Web'de localhost:8001'e doğrudan bağlan (Playwright/web preview), mobile'da ngrok URL kullan
+const BACKEND_URL = Platform.OS === 'web' ? 'http://localhost:8001' : process.env.EXPO_PUBLIC_BACKEND_URL;
 
 const C = {
   bg: '#0F0F0F',
