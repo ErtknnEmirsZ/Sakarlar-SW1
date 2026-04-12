@@ -32,6 +32,8 @@ interface ParsedProduct {
   category: string;
   stock_quantity: number;
   vat_excluded_price: number | null;
+  quantity_type: string;   // "adet" | "kutu" | "paket" | "koli"
+  box_quantity: number;    // units per box
 }
 
 // ─── Price normalization ───────────────────────────────────────────────────────
@@ -61,6 +63,29 @@ const detectCategory = (name: string): string => {
   if (/\btuz\b|şeker|^un\b|makarna|pirinç|yağ\b|çay\b|kahve|\bsu\b|süt|ekmek|peynir|gıda/.test(l))
     return 'gida';
   return 'diger';
+};
+
+// ─── Detect box (koli) info from a line ────────────────────────────────────────
+const detectBoxInfo = (line: string): { quantity_type: string; box_quantity: number } => {
+  const l = line.toLowerCase();
+
+  // Match: "12'li", "24'lü", "12li", "24lü", "x12", "12'lik"
+  const nMatch =
+    line.match(/(\d+)\s*['']l[iıuü]\b/i) ||
+    line.match(/\bx\s*(\d+)\b/i) ||
+    line.match(/1\s*koli\s*[=:]\s*(\d+)/i) ||
+    line.match(/(\d+)\s*(?:adet\s*[/\\]?\s*koli|adet\/kutu|adet\/paket)/i) ||
+    line.match(/koli\s*(?:adet|içi|=)?\s*[=:]\s*(\d+)/i);
+
+  const box_quantity = nMatch ? (parseInt(nMatch[1]) || 1) : 1;
+
+  let quantity_type = 'adet';
+  if (l.includes('koli')) quantity_type = 'koli';
+  else if (l.includes('kutu')) quantity_type = 'kutu';
+  else if (l.includes('paket')) quantity_type = 'paket';
+  else if (box_quantity > 1) quantity_type = 'kutu';
+
+  return { quantity_type, box_quantity };
 };
 
 // ─── Parse structured line (tab / pipe / semicolon) ────────────────────────────
@@ -109,7 +134,8 @@ const parseStructuredLine = (parts: string[]): ParsedProduct | null => {
   if (!name || name.length < 2) return null;
   name = name.charAt(0).toUpperCase() + name.slice(1);
 
-  return { product_name: name, barcode, price, category: detectCategory(name), stock_quantity, vat_excluded_price: null };
+  const { quantity_type: qt1, box_quantity: bq1 } = detectBoxInfo(parts.join(' '));
+  return { product_name: name, barcode, price, category: detectCategory(name), stock_quantity, vat_excluded_price: null, quantity_type: qt1, box_quantity: bq1 };
 };
 
 // ─── Parse unstructured line ──────────────────────────────────────────────────
@@ -136,7 +162,8 @@ const parseUnstructuredLine = (line: string): ParsedProduct | null => {
   if (!name || name.length < 2) return null;
   name = name.charAt(0).toUpperCase() + name.slice(1);
 
-  return { product_name: name, barcode, price, category: detectCategory(name), stock_quantity, vat_excluded_price: null };
+  const { quantity_type: qt2, box_quantity: bq2 } = detectBoxInfo(line);
+  return { product_name: name, barcode, price, category: detectCategory(name), stock_quantity, vat_excluded_price: null, quantity_type: qt2, box_quantity: bq2 };
 };
 
 // ─── Main text parser ─────────────────────────────────────────────────────────
@@ -345,7 +372,7 @@ export default function PasteScreen() {
         {/* Column headers */}
         <View style={styles.colHeader}>
           <Text style={[styles.colText, { flex: 1 }]}>ÜRÜN ADI • BARKOD</Text>
-          <Text style={[styles.colText, { width: 90, textAlign: 'right' }]}>FİYAT • STOK</Text>
+          <Text style={[styles.colText, { width: 120, textAlign: 'right' }]}>FİYAT • STOK • PAKET</Text>
         </View>
 
         {/* Preview list */}
@@ -353,25 +380,34 @@ export default function PasteScreen() {
           <FlashList
             data={previewItems}
             keyExtractor={(item) => item.barcode}
-            estimatedItemSize={58}
-            renderItem={({ item }) => (
-              <View style={styles.previewRow}>
-                <View style={styles.previewLeft}>
-                  <Text style={styles.previewName} numberOfLines={1}>{item.product_name}</Text>
-                  <Text style={styles.previewBarcode}>{item.barcode}</Text>
-                </View>
-                <View style={styles.previewRight}>
-                  <Text style={styles.previewPrice}>
-                    {item.price > 0 ? `₺${item.price.toFixed(2)}` : '—'}
-                  </Text>
-                  {item.stock_quantity >= 0 && (
-                    <Text style={[styles.previewQty, { color: stockColor(item.stock_quantity) }]}>
-                      {item.stock_quantity === 0 ? 'Tükendi' : `${item.stock_quantity} adet`}
+            estimatedItemSize={68}
+            renderItem={({ item }) => {
+              const hasBox = (item.box_quantity ?? 1) > 1;
+              const boxPrice = hasBox ? item.price * (item.box_quantity ?? 1) : null;
+              return (
+                <View style={styles.previewRow}>
+                  <View style={styles.previewLeft}>
+                    <Text style={styles.previewName} numberOfLines={1}>{item.product_name}</Text>
+                    <Text style={styles.previewBarcode}>{item.barcode}</Text>
+                    {hasBox && (
+                      <Text style={styles.previewBoxInfo}>
+                        📦 {item.box_quantity}'li {item.quantity_type} → Koli: ₺{boxPrice?.toFixed(2)}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.previewRight}>
+                    <Text style={styles.previewPrice}>
+                      {item.price > 0 ? `₺${item.price.toFixed(2)}` : '—'}
                     </Text>
-                  )}
+                    {item.stock_quantity >= 0 && (
+                      <Text style={[styles.previewQty, { color: stockColor(item.stock_quantity) }]}>
+                        {item.stock_quantity === 0 ? 'Tükendi' : `${item.stock_quantity} adet`}
+                      </Text>
+                    )}
+                  </View>
                 </View>
-              </View>
-            )}
+              );
+            }}
             ListFooterComponent={
               parsed.length > 50
                 ? <Text style={styles.moreText}>+ {(parsed.length - 50).toLocaleString()} ürün daha...</Text>
@@ -498,6 +534,7 @@ const styles = StyleSheet.create({
   previewLeft: { flex: 1, gap: 3, paddingRight: 12 },
   previewName: { color: C.text, fontSize: 13, fontWeight: '500' },
   previewBarcode: { color: C.sub, fontSize: 11, letterSpacing: 1.5 },
+  previewBoxInfo: { color: '#22C55E', fontSize: 10, fontWeight: '600' },
   previewRight: { alignItems: 'flex-end', gap: 2, minWidth: 80 },
   previewPrice: { color: C.primary, fontSize: 15, fontWeight: '800' },
   previewQty: { fontSize: 10, fontWeight: '700' },

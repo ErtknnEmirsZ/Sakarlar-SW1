@@ -29,6 +29,8 @@ interface Product {
   category: string;
   stock_quantity?: number | null;
   vat_excluded_price?: number | null;
+  quantity_type?: string;
+  box_quantity?: number;
 }
 
 export default function ProductDetail() {
@@ -84,16 +86,35 @@ export default function ProductDetail() {
     qty < 10 ? `Az Kaldı • ${qty} adet` :
     `Stok: ${qty} adet`;
 
+  const boxQty = product.box_quantity ?? 1;
+  const qType = product.quantity_type ?? 'adet';
+  const boxPrice = boxQty > 1 ? product.price * boxQty : null;
+
   return (
     <SafeAreaView style={styles.container} testID="product-detail">
       {/* Price Hero */}
       <View style={styles.priceHero}>
-        <Text style={styles.priceLabel}>FİYAT</Text>
-        <Text style={styles.price} testID="product-price">{formatPrice(product.price)}</Text>
-        {product.vat_excluded_price != null && product.vat_excluded_price > 0 && (
-          <Text style={styles.vatPrice}>
-            KDV Hariç: {formatPrice(product.vat_excluded_price)}
-          </Text>
+        {/* Unit Price */}
+        <View style={styles.priceBlock}>
+          <Text style={styles.priceLabel}>BİRİM FİYATI</Text>
+          <Text style={styles.price} testID="product-price">{formatPrice(product.price)}</Text>
+          {product.vat_excluded_price != null && product.vat_excluded_price > 0 && (
+            <Text style={styles.vatPrice}>KDV Hariç: {formatPrice(product.vat_excluded_price)}</Text>
+          )}
+        </View>
+
+        {/* Box Price — only if box_quantity > 1 */}
+        {boxPrice != null && (
+          <>
+            <View style={styles.priceDivider} />
+            <View style={styles.priceBlock}>
+              <Text style={styles.priceLabel}>
+                {qType.toUpperCase()} FİYATI ({boxQty} ADET)
+              </Text>
+              <Text style={[styles.price, styles.boxPriceText]}>{formatPrice(boxPrice)}</Text>
+              <Text style={styles.boxPriceSub}>{boxQty} adet × {formatPrice(product.price)}</Text>
+            </View>
+          </>
         )}
       </View>
 
@@ -140,30 +161,38 @@ const styles = StyleSheet.create({
   // Price Hero
   priceHero: {
     backgroundColor: C.surface,
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 36,
+    justifyContent: 'center',
+    paddingVertical: 28,
     borderBottomWidth: 1,
     borderBottomColor: C.border,
+    gap: 0,
   },
+  priceBlock: { flex: 1, alignItems: 'center', paddingHorizontal: 16 },
+  priceDivider: { width: 1, height: 60, backgroundColor: C.border },
   priceLabel: {
     color: C.sub,
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 2,
-    marginBottom: 8,
+    letterSpacing: 1.5,
+    marginBottom: 6,
+    textAlign: 'center',
   },
   price: {
     color: C.primary,
-    fontSize: 64,
+    fontSize: 36,
     fontWeight: '900',
-    letterSpacing: -2,
-    lineHeight: 70,
+    letterSpacing: -1,
+    textAlign: 'center',
   },
+  boxPriceText: { color: '#22C55E', fontSize: 30 },
+  boxPriceSub: { color: C.sub, fontSize: 10, marginTop: 2, textAlign: 'center' },
   vatPrice: {
     color: C.sub,
-    fontSize: 14,
-    fontWeight: '500',
-    marginTop: 6,
+    fontSize: 11,
+    marginTop: 3,
+    textAlign: 'center',
   },
 
   // Info Card

@@ -36,6 +36,8 @@ export default function AddProductScreen() {
   const [vatPrice, setVatPrice] = useState('');
   const [category, setCategory] = useState<Category>('temizlik');
   const [stockQuantity, setStockQuantity] = useState('0');
+  const [quantityType, setQuantityType] = useState<'adet' | 'kutu' | 'paket' | 'koli'>('adet');
+  const [boxQuantity, setBoxQuantity] = useState('1');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -59,6 +61,8 @@ export default function AddProductScreen() {
           setPrice(String(p.price ?? '').replace('.', ','));
           setVatPrice(p.vat_excluded_price ? String(p.vat_excluded_price).replace('.', ',') : '');
           setStockQuantity(String(p.stock_quantity ?? 0));
+          setQuantityType((p.quantity_type as any) || 'adet');
+          setBoxQuantity(String(p.box_quantity ?? 1));
           const cat = p.category;
           if (cat === 'ambalaj') setCategory('ambalaj');
           else if (cat === 'gida') setCategory('gida');
@@ -93,12 +97,15 @@ export default function AddProductScreen() {
     try {
       const vatNum = vatPrice.trim() ? parseFloat(vatPrice.replace(',', '.')) : null;
       const stockQty = Math.max(0, parseInt(stockQuantity.replace(',', '.').trim(), 10) || 0);
+      const boxQty = Math.max(1, parseInt(boxQuantity.trim(), 10) || 1);
       const body = {
         product_name: trimName,
         barcode: trimBarcode,
         price: priceNum,
         category,
         stock_quantity: stockQty,
+        quantity_type: quantityType,
+        box_quantity: boxQty,
         vat_excluded_price: vatNum && !isNaN(vatNum) ? vatNum : null,
       };
       const url = isEdit ? `${BACKEND_URL}/api/products/${productId}` : `${BACKEND_URL}/api/products`;
@@ -271,6 +278,49 @@ export default function AddProductScreen() {
             />
           </View>
 
+          {/* Quantity Type */}
+          <View style={styles.fieldGroup}>
+            <Text style={styles.fieldLabel}>BİRİM TÜRÜ</Text>
+            <View style={styles.typeRow}>
+              {(['adet', 'kutu', 'paket', 'koli'] as const).map((t) => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.typeBtn, quantityType === t && styles.typeBtnActive]}
+                  onPress={() => {
+                    setQuantityType(t);
+                    if (t === 'adet') setBoxQuantity('1');
+                  }}
+                >
+                  <Text style={[styles.typeBtnText, quantityType === t && styles.typeBtnTextActive]}>
+                    {t.toUpperCase()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Box Quantity — shown only when type is kutu/paket/koli */}
+          {quantityType !== 'adet' && (
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>
+                {quantityType.toUpperCase()} İÇİ ADET (kaç adet = 1 {quantityType})
+              </Text>
+              <TextInput
+                style={styles.input}
+                value={boxQuantity}
+                onChangeText={(v) => setBoxQuantity(v.replace(/[^0-9]/g, '') || '1')}
+                placeholder="12"
+                placeholderTextColor={C.sub}
+                keyboardType="number-pad"
+              />
+              {parseFloat(price.replace(',', '.')) > 0 && parseInt(boxQuantity) > 1 && (
+                <Text style={styles.calcHint}>
+                  Koli Fiyatı: ₺{(parseFloat(price.replace(',', '.')) * parseInt(boxQuantity)).toFixed(2)}
+                </Text>
+              )}
+            </View>
+          )}
+
           {/* Save Button */}
           <TouchableOpacity
             testID="save-product-btn"
@@ -368,6 +418,18 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   saveBtnText: { color: '#0A0A0A', fontSize: 17, fontWeight: '800' },
+  typeRow: { flexDirection: 'row', gap: 8 },
+  typeBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5,
+    borderColor: C.border, backgroundColor: C.surface, alignItems: 'center',
+  },
+  typeBtnActive: { borderColor: C.primary, backgroundColor: C.primary + '15' },
+  typeBtnText: { color: C.sub, fontSize: 12, fontWeight: '700' },
+  typeBtnTextActive: { color: C.primary },
+  calcHint: {
+    color: C.success, fontSize: 12, fontWeight: '700',
+    marginTop: 6, paddingHorizontal: 2,
+  },
   deleteBtnRow: {
     flexDirection: 'row',
     alignItems: 'center',

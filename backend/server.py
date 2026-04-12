@@ -42,6 +42,8 @@ class ProductCreate(BaseModel):
     category: str = "temizlik"          # temizlik | ambalaj | gida | diger
     vat_excluded_price: Optional[float] = None
     stock_quantity: int = 0
+    quantity_type: str = "adet"         # adet | kutu | paket | koli
+    box_quantity: int = 1               # units per box (1 = single unit)
 
 
 class ProductUpdate(BaseModel):
@@ -51,6 +53,8 @@ class ProductUpdate(BaseModel):
     category: Optional[str] = None
     vat_excluded_price: Optional[float] = None
     stock_quantity: Optional[int] = None
+    quantity_type: Optional[str] = None
+    box_quantity: Optional[int] = None
 
 
 class ImportProduct(BaseModel):
@@ -60,6 +64,8 @@ class ImportProduct(BaseModel):
     category: str = "diger"
     stock_quantity: int = 0
     vat_excluded_price: Optional[float] = None
+    quantity_type: str = "adet"         # adet | kutu | paket | koli
+    box_quantity: int = 1               # units per box
 
 
 class BulkImportRequest(BaseModel):
@@ -170,6 +176,8 @@ async def bulk_import_products(data: BulkImportRequest):
                             "category": p.category,
                             "stock_quantity": p.stock_quantity,
                             "vat_excluded_price": p.vat_excluded_price,
+                            "quantity_type": p.quantity_type,
+                            "box_quantity": p.box_quantity,
                             "search_name": normalize_turkish(p.product_name),
                             "updated_at": now,
                         },
@@ -213,6 +221,8 @@ async def bulk_import_products(data: BulkImportRequest):
                     "category": p.category,
                     "stock_quantity": p.stock_quantity,
                     "vat_excluded_price": p.vat_excluded_price,
+                    "quantity_type": p.quantity_type,
+                    "box_quantity": p.box_quantity,
                     "search_name": normalize_turkish(p.product_name),
                     "search_count": 0,
                     "last_searched_at": None,
@@ -270,6 +280,8 @@ async def create_product(data: ProductCreate):
         "category": data.category,
         "vat_excluded_price": data.vat_excluded_price,
         "stock_quantity": data.stock_quantity,
+        "quantity_type": data.quantity_type,
+        "box_quantity": data.box_quantity,
         "search_name": normalize_turkish(data.product_name),
         "search_count": 0,
         "last_searched_at": None,

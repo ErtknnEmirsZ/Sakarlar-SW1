@@ -48,6 +48,8 @@ interface Product {
   stock_quantity?: number | null;
   vat_excluded_price?: number | null;
   search_count?: number;
+  quantity_type?: string;
+  box_quantity?: number;
 }
 
 // Returns label + color for stock badge
@@ -132,6 +134,9 @@ export default function MainScreen() {
 
   const renderItem = useCallback(({ item, index }: { item: Product; index: number }) => {
     const stockBadge = getStockBadge(item.stock_quantity);
+    const hasBox = (item.box_quantity ?? 1) > 1;
+    const boxPrice = hasBox ? item.price * (item.box_quantity ?? 1) : null;
+
     return (
       <TouchableOpacity
         testID={`product-item-${index}`}
@@ -165,12 +170,24 @@ export default function MainScreen() {
                   </Text>
                 </View>
               )}
+              {hasBox && (
+                <View style={styles.boxBadge}>
+                  <Text style={styles.boxBadgeText}>
+                    {item.box_quantity}'li {item.quantity_type ?? 'kutu'}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
 
           {/* Price */}
           <View style={styles.priceCol}>
             <Text style={styles.rowPrice}>{formatPrice(item.price)}</Text>
+            {boxPrice != null && (
+              <Text style={styles.boxPriceSmall}>
+                Koli: {formatPrice(boxPrice)}
+              </Text>
+            )}
           </View>
         </View>
       </TouchableOpacity>
@@ -491,6 +508,19 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     letterSpacing: -0.5,
   },
+  boxPriceSmall: {
+    color: '#22C55E',
+    fontSize: 9,
+    fontWeight: '700',
+    marginTop: 1,
+  },
+  boxBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    backgroundColor: 'rgba(34,197,94,0.12)',
+  },
+  boxBadgeText: { color: '#22C55E', fontSize: 9, fontWeight: '700' },
 
   // Empty state
   empty: {
