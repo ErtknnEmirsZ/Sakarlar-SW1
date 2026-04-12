@@ -95,7 +95,7 @@ async def get_cached_products() -> List[dict]:
     return _products_cache
 
 
-# ─── Priority sort ────────────────────────────────────────────────────────────────────
+# ─── Browse mode sort (no search query) ───────────────────────────────────────────────
 def ts_to_neg(ts: Optional[str]) -> float:
     if not ts:
         return float('inf')
@@ -106,6 +106,7 @@ def ts_to_neg(ts: Optional[str]) -> float:
 
 
 def sort_by_priority(results: List[Tuple[dict, float]]) -> List[dict]:
+    """Browse mode: sort by popularity (search_count) then recency."""
     results.sort(key=lambda x: (
         -(x[0].get('search_count', 0) or 0),
         ts_to_neg(x[0].get('last_searched_at')),
@@ -114,20 +115,56 @@ def sort_by_priority(results: List[Tuple[dict, float]]) -> List[dict]:
     return [r[0] for r in results]
 
 
-# ─── Fuzzy search ─────────────────────────────────────────────────────────────────────────
-def fuzzy_search(products: List[dict], query: str, threshold: int = 35) -> List[dict]:
+# ─── Search relevance scoring ──────────────────────────────────────────────────────────
+def get_search_score(norm_q: str, sn: str) -> float:
+    """
+    Pure relevance score — zero history/date bias.
+    100 = Exact match
+     75 = Prefix match  (product name starts with entire query)
+     60 = Token-prefix  (every query word is a prefix of some product word)
+     50 = Contains      (query is a substring of product name)
+    1-25 = Fuzzy        (rapidfuzz similarity ≥ 35)
+      0  = No match
+    """
+    if not sn:
+        return 0.0
+    # Exact match
+    if norm_q == sn:
+        return 100.0
+    # Prefix match
+    if sn.startswith(norm_q):
+        return 75.0
+    # Token-prefix: every query word is a prefix of at least one product word
+    q_words = norm_q.split()
+    s_words = sn.split()
+    if q_words and all(any(sw.startswith(qw) for sw in s_words) for qw in q_words):
+        return 60.0
+    # Contains match
+    if norm_q in sn:
+        return 50.0
+    # Fuzzy fallback via rapidfuzz
+    fuzz_score = max(
+        fuzz.partial_ratio(norm_q, sn),
+        fuzz.token_sort_ratio(norm_q, sn),
+        fuzz.WRatio(norm_q, sn),
+    )
+    if fuzz_score >= 60:
+        return fuzz_score * 0.25   # maps 60-100 → 15-25
+    return 0.0
+
+
+# ─── Search (relevance-sorted, no history bias) ───────────────────────────────────────
+def fuzzy_search(products: List[dict], query: str) -> List[dict]:
     norm_q = normalize_turkish(query)
     results: List[Tuple[dict, float]] = []
     for p in products:
-        sn = p.get('search_name', normalize_turkish(p['product_name']))
-        score = max(
-            fuzz.partial_ratio(norm_q, sn),
-            fuzz.token_sort_ratio(norm_q, sn),
-            fuzz.WRatio(norm_q, sn),
-        )
-        if score >= threshold:
+        sn = p.get('search_name') or normalize_turkish(p['product_name'])
+        score = get_search_score(norm_q, sn)
+        if score > 0:
             results.append((p, score))
-    return sort_by_priority(results)[:200]
+    # Sort purely by relevance score — highest first; tie-break: shorter name = more specific
+    results.sort(key=lambda x: (-x[1], len(x[0].get('product_name', ''))))
+    return [r[0] for r in results]
 
 
 # ─── Search count helper ───────────────────────────────────────────────────────────────

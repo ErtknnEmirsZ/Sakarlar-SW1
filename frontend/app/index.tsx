@@ -86,6 +86,7 @@ export default function MainScreen() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [debouncePending, setDebouncePending] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -136,12 +137,14 @@ export default function MainScreen() {
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    setLoading(true);
-    setPage(1);
-    setHasMore(true);
+    // Her tuş basışında debounce başlatılır — listeyi anında temizlemez
+    setDebouncePending(true);
     searchTimer.current = setTimeout(() => {
+      setDebouncePending(false);
+      setPage(1);
+      setHasMore(true);
       fetchProducts(query, category, 1, false);
-    }, 150);
+    }, 300);
     return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, category]);
@@ -374,8 +377,8 @@ export default function MainScreen() {
           </TouchableOpacity>
 
           {/* Search Input */}
-          <View style={styles.searchBox}>
-            <Search size={15} color={C.sub} />
+          <View style={[styles.searchBox, debouncePending && styles.searchBoxActive]}>
+            <Search size={15} color={debouncePending ? C.primary : C.sub} />
             <TextInput
               testID="search-input"
               style={styles.searchInput}
@@ -683,6 +686,9 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 1,
     borderColor: C.border,
+  },
+  searchBoxActive: {
+    borderColor: C.primary + '66',
   },
   searchInput: { flex: 1, color: C.text, fontSize: 14, padding: 0 },
   scanBtn: {

@@ -111,7 +111,7 @@ backend:
     status_history:
       - working: true
         agent: "main"
-        comment: "Fully working with rapidfuzz, Turkish normalization, priority sorting"
+        comment: "v5 SEARCH REWRITE: Removed ts_to_neg/history bias from search mode. New get_search_score: Exact=100, Prefix=75, Token-Prefix=60, Contains=50, Fuzzy(≥60 threshold)×0.25. Tiebreaker: shorter product name = more specific. Browse mode still uses popularity sort. Tested: 'çöp poşeti' → 1809 results (was 21k), prefix matches ranked first correctly."
 
   - task: "POST /api/products/bulk - replace (Excel import) + upsert (text paste) modes"
     implemented: true
@@ -237,14 +237,16 @@ test_plan:
 
 agent_communication:
   - agent: "main"
-    message: "v4 MAJOR UPDATE COMPLETE. All features implemented and screenshots verified:
-    1. Branding: SpecTrun SW & Şakarlar with ST logo badge (gold) in header
-    2. Admin auth: Settings → login (Emir/Ertekinelvan54) → AdminPanel. AsyncStorage persists auth.
-    3. Admin protection: Auth gate shows on /admin and /admin/add when not logged in.
-    4. Speed mode: 2 second delay + CameraView remount (scanKey) for proper camera reset.
-    5. Scanner: Centered (vertically) with slightly taller frame (0.38 ratio).
-    6. Stock status: var/az/yok with colored badges in list + detail page. Admin can edit.
-    7. VAT price: vat_excluded_price field shown below main price on detail page.
-    8. Colorful UI: Gold accent strip, colored category left stripes, vibrant filters.
-    9. New backend endpoints: PUT /api/products/{id}/stock, GET /api/settings.
-    10. Excel/CSV import handles stock_status and vat_excluded_price columns."
+    message: "v5 SEARCH SYSTEM REWRITE COMPLETE:
+    Backend (server.py):
+    - Removed ts_to_neg history/date bias from SEARCH mode entirely
+    - New get_search_score function: Exact=100, Prefix=75, Token-Prefix=60, Contains=50, Fuzzy(threshold=60)×0.25
+    - Tiebreaker: shorter product name = more specific result
+    - Fuzzy threshold raised 35→60 to eliminate noisy matches (21k→1.8k for 'çöp poşeti')
+    - Browse mode (no query): still uses popularity sort (search_count + date)
+    Frontend (index.tsx):
+    - Removed setLoading(true) from immediate effect body (was firing on every keystroke = lag)
+    - Added debouncePending state (visual indicator: yellow search icon during typing)
+    - Debounce increased 150ms→300ms, setPage/setHasMore moved inside setTimeout
+    - searchBoxActive style added (yellow border when debouncing)
+    Verified: 'koli bandı' → KOLİ BANDI first, 'çöp poşeti' → ÇÖP POŞETİ 80*110 first (shortest prefix)"
